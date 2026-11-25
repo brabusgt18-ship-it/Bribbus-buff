@@ -1,0 +1,819 @@
+﻿param([switch]$Scan,[switch]$SelfTest,[switch]$Undo,[switch]$UiTest)
+$ErrorActionPreference='Stop'
+$root=Join-Path $env:LOCALAPPDATA 'BrabusPC-Debloater-State'
+$null=New-Item -ItemType Directory -Path $root -Force
+$legacyJournal=Join-Path $root 'undo.json'
+$backupDir=Join-Path $root 'backup-v2'
+$null=New-Item -ItemType Directory -Path $backupDir -Force
+$journal=Join-Path $backupDir 'active.json'
+$mirror=Join-Path $backupDir 'active-mirror.json'
+$log=Join-Path $root 'changes.jsonl'
+$script:rows=@()
+function Atomic($path,$obj){
+ $tmp="$path.tmp"
+ ConvertTo-Json -InputObject $obj -Depth 8|Set-Content -LiteralPath $tmp -Encoding UTF8
+ if(Test-Path $path){$bak="$path.previous";[IO.File]::Replace($tmp,$path,$bak);Remove-Item -LiteralPath $bak -ErrorAction SilentlyContinue}else{[IO.File]::Move($tmp,$path)}
+}
+# Native AC power-setting readback, no locale-dependent output parsing.
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class BrabusPower {
+ [DllImport("powrprof.dll")] public static extern uint PowerReadACValueIndex(IntPtr root, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
+}
+"@
+function PowerCommand([string[]]$argsList){
+ $result=& powercfg.exe @argsList 2>&1
+ if($LASTEXITCODE -ne 0){throw "powercfg: $result"}
+ ($result -join [Environment]::NewLine)
+}
+function CurrentScheme{
+ $m=[regex]::Match((PowerCommand @('/getactivescheme')),'[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}')
+ if(!$m.Success){throw 'Piano energetico non rilevato'}
+ $m.Value
+}
+function PowerRead($path,$key){
+ $parts=$path.Split('|')
+ if($parts.Count -ne 3){throw 'Indirizzo energia non valido'}
+ $scheme=[guid]$parts[1];$group=[guid]$parts[2];$setting=[guid]$key
+ [uint32]$value=0
+ $code=[BrabusPower]::PowerReadACValueIndex([IntPtr]::Zero,[ref]$scheme,[ref]$group,[ref]$setting,[ref]$value)
+ if($code -ne 0){throw "Impostazione AC non disponibile ($code)"}
+ [pscustomobject]@{Exists=$true;Kind='DWord';Value=[int]$value}
+}
+function PowerWrite($path,$key,$state){
+ if(!$state.Exists -or $state.Kind -ne 'DWord'){throw 'Valore energia non valido'}
+ $parts=$path.Split('|');$scheme=([guid]$parts[1]).ToString();$group=([guid]$parts[2]).ToString();$setting=([guid]$key).ToString()
+ $null=PowerCommand @('/setacvalueindex',$scheme,$group,$setting,[string][int]$state.Value)
+ if((CurrentScheme) -eq $scheme){$null=PowerCommand @('/setactive',$scheme)}
+}
+function PowerCatalog{
+ $sys=Get-CimInstance Win32_ComputerSystem
+ # Only desktop systems, AC indexes only. Never force power plans on laptops.
+ if($sys.PCSystemType -ne 1 -or @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue).Count){return}
+ $plan=CurrentScheme
+ $proc='54533251-82be-4824-96c1-47b60b740d00'
+ $pci='501a4d13-42af-4429-9fd1-a8218c268e20'
+ $disk='0012ee47-9041-4b5d-9b77-535fba8b1442'
+ $items=@(
+  @('CPU: limite massimo 100%',$proc,'bc5038f7-23e0-4960-96da-33abaf5935ec',100,'Rimuove un eventuale limite AC; maggiori consumi possibili'),
+  @('CPU: minimo 5%',$proc,'893dee8e-2bef-41e0-89c6-b55d0929964c',5,'Consente idle; utile contro piani bloccati al 100%, non e FPS boost'),
+  @('CPU: boost aggressivo',$proc,'be337238-0d82-4146-a960-4f3749d470c7',2,'Puo aumentare calore e consumi; misura temperature prima/dopo'),
+  @('CPU: preferenza prestazioni EPP 25',$proc,'36687f9e-e3a5-4dbf-b1dc-15eb381c6863',25,'Solo CPPC/HWP compatibile; effetto hardware non garantito'),
+  @('PCIe: risparmio link disattivato',$pci,'ee12f906-d277-404b-b6da-e5fa1a576df5',0,'Opzionale per confronto latenza; maggior consumo a riposo'),
+  @('Dischi: nessuno standby AC',$disk,'6738e2c4-e8a5-4a42-b16a-e040e769756e',0,'Solo se HDD entra in standby durante attivita; maggior consumo')
+ )
+ foreach($item in $items){
+  $path="POWER|$plan|$($item[1])"
+  try{
+   $before=PowerRead $path $item[2]
+   $target=[pscustomobject]@{Exists=$true;Kind='DWord';Value=[int]$item[3]}
+   [pscustomobject]@{Name=$item[0];Category='Power / CPU';Path=$path;Key=$item[2];TargetState=$target;Before=(Display $before);After=(Display $target);Status=$(if(Same $before $target){'GIA CONFIGURATO'}else{'DISPONIBILE'});Level='OptIn';Note=($item[4]+'; solo piano attivo al momento della scansione, AC');Selected=$false}
+  }catch{}
+ }
+}
+function MakeString($name,$category,$path,$key,$value,$note){
+ $before=ReadValue $path $key
+ $target=[pscustomobject]@{Exists=$true;Kind='String';Value=[string]$value}
+ [pscustomobject]@{Name=$name;Category=$category;Path=$path;Key=$key;TargetState=$target;Before=(Display $before);After=(Display $target);Status=$(if(Same $before $target){'GIA CONFIGURATO'}else{'DISPONIBILE'});Level='OptIn';Note=$note;Selected=$false}
+}
+function MoreCatalog{
+ $ex='Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+ $cd='Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+ $desktop='Control Panel\Desktop'
+ $privacy='Software\Microsoft\Windows\CurrentVersion\SearchSettings'
+ # Legacy preference keys are explicitly optional and may be ignored on some builds.
+ Make 'Miniature al posto delle icone: off' 'Explorer' $ex 'IconsOnly' 1 'OptIn' 'Riduce generazione miniature; perde anteprime'
+ Make 'Mostra tipo elemento nei suggerimenti' 'Explorer' $ex 'ShowInfoTip' 0 'OptIn' 'Nasconde descrizioni al passaggio del mouse'
+ Make 'Apri cartelle in processo separato' 'Explorer' $ex 'SeparateProcess' 1 'OptIn' 'Isolamento Explorer; puo usare piu RAM, non ottimizzazione FPS'
+ Make 'Mostra barra di stato Explorer' 'Explorer' $ex 'ShowStatusBar' 1 'OptIn' 'Preferenza visiva'
+ Make 'Mostra unita senza supporti' 'Explorer' $ex 'HideDrivesWithNoMedia' 0 'OptIn' 'Mostra unita senza supporti'
+ Make 'Colori file compressi/cifrati: off' 'Privacy' $ex 'ShowCompColor' 0 'OptIn' 'Non colora file NTFS compressi o cifrati'
+ Make 'Ricerca: cronologia dispositivo' 'Privacy' $privacy 'IsDeviceSearchHistoryEnabled' 0 'OptIn' 'Disattiva salvataggio cronologia ricerca locale; non cancella dati'
+ Make 'Ricerca: contenuti cloud account personale' 'Privacy' $privacy 'IsMSACloudSearchEnabled' 0 'OptIn' 'Non mostra contenuti cloud nella ricerca'
+ Make 'Ricerca: contenuti cloud lavoro/scuola' 'Privacy' $privacy 'IsAADCloudSearchEnabled' 0 'OptIn' 'Non mostra contenuti cloud lavoro/scuola; non usare su PC gestito'
+ Make 'Rotazione contenuti schermata di blocco' 'Debloat' $cd 'RotatingLockScreenEnabled' 0 'OptIn' 'Preferenza contenuti lock screen'
+ Make 'Overlay contenuti schermata di blocco' 'Debloat' $cd 'RotatingLockScreenOverlayEnabled' 0 'OptIn' 'Preferenza suggerimenti lock screen'
+ Make 'Mostra consigli account in Start' 'Debloat' $ex 'Start_AccountNotifications' 0 'OptIn' 'Preferenza dipendente dalla build'
+ MakeString 'Animazioni finestre' 'Visual' 'Control Panel\Desktop\WindowMetrics' 'MinAnimate' '0' 'Disabilita animazioni min/max; nuovo accesso puo essere necessario'
+ MakeString 'Ritardo apertura menu 150 ms' 'Visual' $desktop 'MenuShowDelay' '150' 'Preferenza UX, non cambia latenza input in gioco'
+ MakeString 'Comportamento mouse: accelerazione off' 'Input' 'Control Panel\Mouse' 'MouseSpeed' '0' 'Solo puntatore Windows, giochi raw input possono ignorarlo'
+ PowerCatalog
+}
+
+function ReadValue($path,$name){
+ if($path.StartsWith("POWER|")){return PowerRead $path $name}
+ $k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($path)
+ try{
+  if($k -and $k.GetValueNames() -contains $name){return [pscustomobject]@{Exists=$true;Kind=[string]$k.GetValueKind($name);Value=$k.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}}
+  [pscustomobject]@{Exists=$false;Kind='';Value=$null}
+ }finally{if($k){$k.Dispose()}}
+}
+function WriteValue($path,$name,$state){
+ if($path.StartsWith("POWER|")){PowerWrite $path $name $state;return}
+ if($state.Exists){
+  $k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($path)
+  try{$value=switch($state.Kind){DWord{[int]$state.Value} String{[string]$state.Value} ExpandString{[string]$state.Value} default{throw 'Tipo non supportato'}}
+   $k.SetValue($name,$value,[Microsoft.Win32.RegistryValueKind]$state.Kind)
+  }finally{$k.Dispose()}
+ }else{
+  $k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($path,$true)
+  if($k){try{$k.DeleteValue($name,$false)}finally{$k.Dispose()}}
+ }
+}
+function Same($a,$b){return ($a.Exists -eq $b.Exists -and (!$a.Exists -or ($a.Kind -eq $b.Kind -and [string]$a.Value -ceq [string]$b.Value)))}
+function Display($v){if($v.Exists){[string]$v.Value}else{'Non impostato'}}
+function Event($name,$before,$after,$status){
+ $e=[ordered]@{Time=(Get-Date).ToString('o');Action=$name;Before=[string]$before;After=[string]$after;Status=$status}
+ $e|ConvertTo-Json -Compress|Add-Content -LiteralPath $log -Encoding UTF8
+}
+# Backup v2: two independently readable copies and immutable session snapshots.
+$script:activeBatch=$null
+$script:backupWarning=''
+function BackupHash([string]$text){
+ $sha=[Security.Cryptography.SHA256]::Create()
+ try{([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))).Replace('-','')}finally{$sha.Dispose()}
+}
+function WriteEnvelope($file,$payload){
+ $json=ConvertTo-Json -InputObject $payload -Depth 16 -Compress
+ $outer=ConvertTo-Json -InputObject @{Format='BrabusBackupV2';SHA256=(BackupHash $json);Payload=$json} -Compress
+ $tmp="$file.$([guid]::NewGuid().ToString('N')).tmp"
+ $bytes=[Text.UTF8Encoding]::new($false).GetBytes($outer)
+ try{
+  $fs=[IO.FileStream]::new($tmp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try{$fs.Write($bytes,0,$bytes.Length);$fs.Flush($true)}finally{$fs.Dispose()}
+  if(Test-Path -LiteralPath $file){$bak="$tmp.previous";[IO.File]::Replace($tmp,$file,$bak);Remove-Item -LiteralPath $bak -ErrorAction SilentlyContinue}else{[IO.File]::Move($tmp,$file)}
+ }finally{if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue}}
+}
+function ReadEnvelope($file){
+ if(!(Test-Path -LiteralPath $file)){throw 'File backup assente'}
+ if((Get-Item -LiteralPath $file).Length -gt 50MB){throw 'Backup troppo grande'}
+ $e=[IO.File]::ReadAllText($file,[Text.UTF8Encoding]::new($false,$true))|ConvertFrom-Json
+ if($e.Format -ne 'BrabusBackupV2' -or $e.Payload -isnot [string] -or (BackupHash $e.Payload) -cne $e.SHA256){throw 'Checksum non valido'}
+ $obj=$e.Payload|ConvertFrom-Json
+ if($obj.Version -ne 2 -or $obj.Owner -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value){throw 'Backup di un altro utente o versione'}
+ $obj
+}
+function NewPayload($records,$type){
+ [ordered]@{Version=2;Owner=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;Time=(Get-Date).ToString('o');Type=$type;Records=@($records)}
+}
+function ValidateRecords($records){
+ $seen=@{}
+ foreach($r in @($records)){
+  if($null -eq $r -or !$r.Path -or !$r.Key -or !$r.Name -or !$r.BatchId -or !$r.Id){throw 'Record backup incompleto'}
+  if($r.Path -notmatch '^(Software\\|System\\|Control Panel\\|POWER\|)' -or $r.Path -match '[\r\n]'){throw 'Percorso backup non supportato'}
+  foreach($v in @($r.Old,$r.Target)){
+   if($null -eq $v -or $v.Exists -isnot [bool]){throw 'Stato backup non valido'}
+   if($v.Exists -and $v.Kind -notin @('DWord','String','ExpandString')){throw 'Tipo backup non supportato'}
+   if($v.Exists -and $v.Kind -eq 'DWord'){ $null=[int]$v.Value }
+  }
+  if($r.Path.StartsWith('POWER|')){
+   $parts=$r.Path.Split('|')
+   if($parts.Count -ne 3){throw 'Record energia non valido'}
+   $null=[guid]$parts[1];$null=[guid]$parts[2];$null=[guid]$r.Key
+   if(!$r.Old.Exists -or !$r.Target.Exists -or $r.Old.Kind -ne 'DWord' -or $r.Target.Kind -ne 'DWord'){throw 'Stato energia non valido'}
+  }
+  $k="$($r.Path)|$($r.Key)"
+  if($seen.ContainsKey($k)){throw 'Record duplicato nel backup'}
+  $seen[$k]=$true
+ }
+}
+function LoadJournal {
+ $script:backupWarning=''
+ $a=$null;$b=$null
+ $pa=Test-Path -LiteralPath $journal;$pb=Test-Path -LiteralPath $mirror
+ if(!$pa -and !$pb){
+  if(Test-Path -LiteralPath $legacyJournal){throw 'Backup precedente non migrato: apri il centro backup'}
+  if(Test-Path -LiteralPath (Join-Path $backupDir 'initialized.flag')){throw 'Entrambe le copie backup mancanti: nessuna modifica consentita'}
+  return
+ }
+ try{$a=ReadEnvelope $journal;if($a.Type -ne 'Journal'){throw 'Tipo errato'};ValidateRecords @($a.Records)}catch{$a=$null}
+ try{$b=ReadEnvelope $mirror;if($b.Type -ne 'Journal'){throw 'Tipo errato'};ValidateRecords @($b.Records)}catch{$b=$null}
+ if(!$a -and !$b){throw 'Entrambe le copie del backup non valide: nessuna scrittura consentita'}
+ if(!$a){$script:backupWarning='Copia primaria danneggiata o assente: uso copia ridondante';$a=$b}
+ elseif(!$b){$script:backupWarning='Copia ridondante danneggiata o assente'}
+ elseif((BackupHash (ConvertTo-Json -InputObject $a -Depth 16 -Compress)) -ne (BackupHash (ConvertTo-Json -InputObject $b -Depth 16 -Compress))){$script:backupWarning='Copie divergenti: primaria prioritaria (scritta per prima)'}
+ foreach($r in @($a.Records)){if($null -ne $r){Write-Output $r}}
+}
+function SaveJournal($records){
+ ValidateRecords @($records)
+ $payload=NewPayload @($records) 'Journal'
+ WriteEnvelope $journal $payload
+ WriteEnvelope $mirror $payload
+ $a=ReadEnvelope $journal;$b=ReadEnvelope $mirror
+ if((BackupHash (ConvertTo-Json -InputObject $a -Depth 16 -Compress)) -ne (BackupHash (ConvertTo-Json -InputObject $b -Depth 16 -Compress))){throw 'Copie backup non identiche; modifica bloccata'}
+ if(!(Test-Path -LiteralPath (Join-Path $backupDir 'initialized.flag'))){[IO.File]::WriteAllText((Join-Path $backupDir 'initialized.flag'),'2')}
+}
+function MigrateLegacy{
+ if(!(Test-Path -LiteralPath $legacyJournal)){return}
+ if((Test-Path -LiteralPath $journal) -or (Test-Path -LiteralPath $mirror)){throw 'Backup legacy e v2 entrambi presenti: controllo manuale richiesto'}
+ $records=@()
+ $batch=[guid]::NewGuid().ToString('N')
+ foreach($r in (Get-Content -LiteralPath $legacyJournal -Raw|ConvertFrom-Json)){
+  $records+= [pscustomobject]@{Name=$r.Name;Path=$r.Path;Key=$r.Key;Old=$r.Old;Target=$r.Target;BatchId=$batch;Id=[guid]::NewGuid().ToString('N');Time=(Get-Date).ToString('o')}
+ }
+ ValidateRecords $records
+ $archive=Join-Path $backupDir ('legacy-'+$batch+'.json')
+ Copy-Item -LiteralPath $legacyJournal -Destination $archive
+ if((Get-FileHash -LiteralPath $archive).Hash -ne (Get-FileHash -LiteralPath $legacyJournal).Hash){throw 'Copia legacy non verificata'}
+ SaveJournal $records
+ Move-Item -LiteralPath $legacyJournal -Destination (Join-Path $backupDir ('legacy-original-'+$batch+'.json'))
+}
+function ReadJournal {LoadJournal}
+function SnapshotRecords($items){
+ $existing=@(ReadJournal)
+ $batch=[guid]::NewGuid().ToString('N');$records=@()
+ foreach($item in @($items)){
+  $old=ReadValue $item.Path $item.Key;$target=$item.TargetState
+  if(Same $old $target){continue}
+  if(@($existing|Where-Object {$_.Path -eq $item.Path -and $_.Key -eq $item.Key}).Count){throw "Backup gia attivo: $($item.Name). Ripristina prima di riapplicare."}
+  if($item.Path.StartsWith('POWER|') -and (CurrentScheme) -ne $item.Path.Split('|')[1]){throw 'Piano energetico cambiato: esegui una nuova scansione'}
+  $records+= [pscustomobject]@{Name=$item.Name;Path=$item.Path;Key=$item.Key;Old=$old;Target=$target;BatchId=$batch;Id=[guid]::NewGuid().ToString('N');Time=(Get-Date).ToString('o')}
+ }
+ ValidateRecords $records
+ if($records.Count){
+  $file=Join-Path $backupDir ('snapshot-'+$batch+'.json')
+  WriteEnvelope $file (NewPayload $records 'Snapshot')
+  $read=ReadEnvelope $file
+  ValidateRecords @($read.Records)
+  if(@($read.Records).Count -ne $records.Count){throw 'Snapshot incompleto'}
+ }
+ [pscustomobject]@{Id=$batch;Records=$records}
+}
+function ApplyValue($item){
+ if($item.Path.StartsWith('POWER|')){
+  if((CurrentScheme) -ne $item.Path.Split('|')[1]){throw 'Piano cambiato: esegui nuova scansione'}
+  if((Test-Path (Join-Path $env:LOCALAPPDATA 'BrabusPC-WinUtil-State\power.json')) -or (Test-Path (Join-Path $env:LOCALAPPDATA 'BrabusPCOptimizerState\restore.json'))){throw 'Ripristina prima altri optimizer'}
+ }
+ $old=ReadValue $item.Path $item.Key;$target=$item.TargetState
+ if(Same $old $target){Event $item.Name (Display $old) (Display $target) 'GIA CONFIGURATO';return}
+ $batch=$script:activeBatch
+ if(!$batch){$batch=SnapshotRecords @($item)}
+ $record=@($batch.Records|Where-Object {$_.Path -eq $item.Path -and $_.Key -eq $item.Key})|Select-Object -First 1
+ if(!$record -or !(Same $old $record.Old) -or !(Same $target $record.Target)){throw 'Valore cambiato dopo snapshot; ripetere scansione'}
+ $entries=@(ReadJournal)
+ if(@($entries|Where-Object {$_.Path -eq $item.Path -and $_.Key -eq $item.Key}).Count){throw 'Backup gia presente'}
+ # Both journal copies are verified BEFORE the actual registry/power write.
+ SaveJournal @($entries+$record)
+ try{
+  if(!(Same (ReadValue $item.Path $item.Key) $record.Old)){throw 'Valore cambiato prima della scrittura'}
+  WriteValue $item.Path $item.Key $target
+  $actual=ReadValue $item.Path $item.Key
+  if(!(Same $actual $target)){throw 'Verifica fallita'}
+  Event $item.Name (Display $old) (Display $actual) 'VERIFICATO'
+ }catch{Event $item.Name (Display $old) '?' ('ERRORE: '+$_.Exception.Message);throw}
+}
+function RestoreRecords($ids){
+ $records=@(ReadJournal)
+ $selected=@($records|Where-Object {$_.Id -in $ids})
+ if(!$selected.Count){return}
+ $file=Join-Path $backupDir ('restore-'+[guid]::NewGuid().ToString('N')+'.json')
+ WriteEnvelope $file (NewPayload $selected 'RestoreAttempt')
+ $null=ReadEnvelope $file
+ $failed=0
+ [array]::Reverse($selected)
+ foreach($r in $selected){
+  try{
+   $now=ReadValue $r.Path $r.Key
+   if(!(Same $now $r.Old)){
+    if(!(Same $now $r.Target)){throw 'Valore cambiato esternamente: non sovrascritto'}
+    WriteValue $r.Path $r.Key $r.Old
+    if(!(Same (ReadValue $r.Path $r.Key) $r.Old)){throw 'Ripristino non verificato'}
+   }
+   $remaining=@(ReadJournal|Where-Object Id -ne $r.Id)
+   SaveJournal $remaining
+   Event $r.Name (Display $now) (Display $r.Old) 'RIPRISTINATO'
+  }catch{$failed++;Event $r.Name '-' '-' ('ERRORE RIPRISTINO: '+$_.Exception.Message)}
+ }
+ if($failed){throw "$failed modifiche non ripristinate; backup conservato"}
+}
+function RestoreAll{RestoreRecords @(ReadJournal|ForEach-Object Id)}
+function BackupStatus{
+ $records=@(ReadJournal)
+ [pscustomobject]@{Pending=$records.Count;Snapshots=@(Get-ChildItem -LiteralPath $backupDir -Filter 'snapshot-*.json' -File).Count;Warning=$script:backupWarning}
+}
+
+function Make($name,$category,$path,$key,$value,$level,$note){
+ $before=ReadValue $path $key
+ $target=[pscustomobject]@{Exists=$true;Kind='DWord';Value=$value}
+ [pscustomobject]@{Name=$name;Category=$category;Path=$path;Key=$key;TargetState=$target;Before=(Display $before);After=(Display $target);Status=$(if(Same $before $target){'GIA CONFIGURATO'}else{'DISPONIBILE'});Level=$level;Note=$note;Selected=$false}
+}
+# Independent extra modules, not imported Winhance code.
+function IsElevated {
+ ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+function PersonalPolicyCatalog {
+ # Read Microsoft templates on the actual device; skip unavailable policy definitions.
+ if((Get-CimInstance Win32_ComputerSystem).PartOfDomain){return}
+ $definitions=@(
+  @('CloudContent.admx','DisableThirdPartySuggestions','Spotlight: suggerimenti terze parti','Debloat'),
+  @('CloudContent.admx','DisableSpotlightCollectionOnDesktop','Spotlight: raccolta sul desktop','Debloat'),
+  @('CloudContent.admx','DisableWindowsSpotlightOnActionCenter','Spotlight: suggerimenti nel centro notifiche','Debloat'),
+  @('CloudContent.admx','DisableWindowsSpotlightOnSettings','Spotlight: suggerimenti in Impostazioni','Debloat'),
+  @('CloudContent.admx','DisableWindowsSpotlightWindowsWelcomeExperience','Spotlight: schermata benvenuto','Debloat'),
+  @('CloudContent.admx','DisableTailoredExperiencesWithDiagnosticData','Policy: esperienze personalizzate','Privacy'),
+  @('CloudContent.admx','DisableWindowsSpotlightFeatures','Spotlight: disabilita tutte le funzioni','Debloat'),
+  @('WindowsExplorer.admx','DisableThumbsDBOnNetworkFolders','Esplora file: cache miniature di rete','Explorer'),
+  @('Explorer.admx','DisableThumbsDBOnNetworkFolders','Esplora file: cache miniature di rete','Explorer')
+ )
+ $seen=@{}
+ foreach($d in $definitions){
+  $file=Join-Path (Join-Path $env:windir 'PolicyDefinitions') $d[0]
+  if(!(Test-Path -LiteralPath $file)){continue}
+  try{
+   [xml]$xml=Get-Content -LiteralPath $file -Raw
+   $policy=$xml.policyDefinitions.policies.policy|Where-Object {$_.name -eq $d[1] -and $_.class -eq 'User' -and $_.key -and $_.valueName -and $null -ne $_.enabledValue.decimal.value}|Select-Object -First 1
+   if(!$policy){continue}
+   $id="$($policy.key)|$($policy.valueName)"
+   if($seen.ContainsKey($id)){continue};$seen[$id]=$true
+   Make $d[2] $d[3] $policy.key $policy.valueName ([int]$policy.enabledValue.decimal.value) 'OptIn' 'Criterio utente da ADMX locale; edizione/build e gestione MDM possono limitarne effetto'
+  }catch{}
+ }
+}
+function AdditionalCatalog {
+ $ex='Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+ $cd='Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+ $n='Software\Microsoft\Windows\CurrentVersion\Notifications\Settings'
+ Make 'Disattiva suggerimenti soft landing' 'Debloat' $cd 'SoftLandingEnabled' 0 'OptIn' 'Preferenza legacy: effetto variabile'
+ Make 'Disattiva sottoscrizioni promozionali' 'Debloat' $cd 'SubscribedContentEnabled' 0 'OptIn' 'Preferenza utente per contenuti promozionali'
+ Make 'Preferenza lingua non condivisa sul web' 'Privacy' 'Control Panel\International\User Profile' 'HttpAcceptLanguageOptOut' 1 'OptIn' 'Influenza lingua automatica dei siti compatibili'
+ Make 'Diagnostica digitazione facoltativa' 'Privacy' 'Software\Microsoft\Input\TIPC' 'Enabled' 0 'OptIn' 'Riduce invio facoltativo dati digitazione; non tocca riconoscimento vocale'
+ Make 'Notifiche account in Impostazioni' 'Notifications' 'Software\Microsoft\Windows\CurrentVersion\SystemSettings\AccountNotifications' 'EnableAccountNotifications' 0 'OptIn' 'Puoi perdere promemoria account e backup'
+ Make 'Notifiche barra di gioco' 'Notifications' 'Software\Microsoft\GameBar' 'ShowStartupPanel' 0 'OptIn' 'Nasconde pannello di avvio Game Bar; dipende dalla versione'
+ Make 'Notifiche toast Windows' 'Notifications' 'Software\Microsoft\Windows\CurrentVersion\PushNotifications' 'ToastEnabled' 0 'OptIn' 'Disabilita toast globali; potresti perdere notifiche importanti; mai nei preset'
+ Make 'Suoni notifiche toast' 'Audio' $n 'NOC_GLOBAL_SETTING_ALLOW_NOTIFICATION_SOUND' 0 'OptIn' 'Preferenza suono notifiche; non modifica audio dei giochi'
+ Make 'Mostra desktop con angolo barra' 'Visual' $ex 'TaskbarSd' 1 'OptIn' 'Preferenza usabilita; Windows 11 compatibile'
+ Make 'Checkbox selezione file' 'Explorer' $ex 'AutoCheckSelect' 1 'OptIn' 'Preferenza selezione file'
+ Make 'Mostra percorso completo in titolo' 'Explorer' 'Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState' 'FullPath' 1 'OptIn' 'Preferenza Esplora file; supporto build variabile'
+ Make 'Disattiva Aero Shake' 'Visual' $ex 'DisallowShaking' 1 'OptIn' 'Evita minimizzazione finestre tramite gesto'
+ PersonalPolicyCatalog
+}
+function SoftwareCatalog {
+ $raw=@'
+Browser|Firefox|Mozilla.Firefox
+Browser|Brave|Brave.Brave
+Browser|Chrome|Google.Chrome
+Browser|Vivaldi|Vivaldi.Vivaldi
+Gaming|Steam|Valve.Steam
+Gaming|Epic Games Launcher|EpicGames.EpicGamesLauncher
+Gaming|Discord|Discord.Discord
+Gaming|OBS Studio|OBSProject.OBSStudio
+Gaming|Heroic Games Launcher|HeroicGamesLauncher.HeroicGamesLauncher
+Gaming|Playnite|Playnite.Playnite
+Gaming|MSI Afterburner|Guru3D.Afterburner
+Media|VLC|VideoLAN.VLC
+Media|Audacity|Audacity.Audacity
+Media|HandBrake|HandBrake.HandBrake
+Media|foobar2000|PeterPawlowski.foobar2000
+Utility|7-Zip|7zip.7zip
+Utility|PowerToys|Microsoft.PowerToys
+Utility|Everything|voidtools.Everything
+Utility|TreeSize Free|JAMSoftware.TreeSize.Free
+Utility|Notepad++|Notepad++.Notepad++
+Utility|CrystalDiskInfo|CrystalDewWorld.CrystalDiskInfo
+Utility|WinDirStat|WinDirStat.WinDirStat
+Utility|HWiNFO|REALiX.HWiNFO
+Utility|CPU-Z|CPUID.CPU-Z
+Utility|GPU-Z|TechPowerUp.GPU-Z
+Office|LibreOffice|TheDocumentFoundation.LibreOffice
+Office|SumatraPDF|SumatraPDF.SumatraPDF
+Office|PDF24|geeksoftwareGmbH.PDF24Creator
+Development|Git|Git.Git
+Development|Visual Studio Code|Microsoft.VisualStudioCode
+Development|PowerShell|Microsoft.PowerShell
+Development|Python 3.13|Python.Python.3.13
+Development|Node.js LTS|OpenJS.NodeJS.LTS
+Development|Windows Terminal|Microsoft.WindowsTerminal
+Creative|GIMP|GIMP.GIMP.3
+Creative|Krita|KDE.Krita
+Creative|Blender|BlenderFoundation.Blender
+Creative|Paint.NET|dotPDN.PaintDotNet
+Communication|Telegram|Telegram.TelegramDesktop
+Communication|Signal|OpenWhisperSystems.Signal
+Communication|Zoom|Zoom.Zoom
+'@
+ foreach($line in ($raw -split '\r?\n')){
+  if(!$line.Trim()){continue}
+  $p=$line.Split('|')
+  [pscustomobject]@{Category=$p[0];Name=$p[1];Id=$p[2];Label="$($p[0])  |  $($p[1])  [$($p[2])]"}
+ }
+}
+function ModuleDialog($title,$hint,$items,$display,$actionTitle,[scriptblock]$action){
+ $d=New-Object Windows.Window
+ $d.Title=$title;$d.Width=830;$d.Height=640;$d.Owner=$w;$d.WindowStartupLocation='CenterOwner';$d.Background='#0B1220';$d.Foreground='#E3ECF9';$d.Resources.MergedDictionaries.Add($w.Resources);SetDarkChrome $d
+ $panel=New-Object Windows.Controls.DockPanel;$panel.Margin='16'
+ $head=New-Object Windows.Controls.StackPanel;[Windows.Controls.DockPanel]::SetDock($head,'Top')
+ $note=New-Object Windows.Controls.TextBlock;$note.Text=$hint;$note.TextWrapping='Wrap';$note.Margin='0,0,0,10';$null=$head.Children.Add($note)
+ $filter=New-Object Windows.Controls.TextBox;$filter.Margin='0,0,0,10';$null=$head.Children.Add($filter);$null=$panel.Children.Add($head)
+ $buttons=New-Object Windows.Controls.StackPanel;$buttons.Orientation='Horizontal';$buttons.HorizontalAlignment='Right';[Windows.Controls.DockPanel]::SetDock($buttons,'Bottom')
+ $go=New-Object Windows.Controls.Button;$go.Content=$actionTitle;$go.Background='#0C7189';$null=$buttons.Children.Add($go)
+ $close=New-Object Windows.Controls.Button;$close.Content='CHIUDI';$close.IsCancel=$true;$null=$buttons.Children.Add($close);$null=$panel.Children.Add($buttons)
+ $list=New-Object Windows.Controls.ListBox;$list.DisplayMemberPath=$display;$list.ItemsSource=@($items);$list.SelectionMode='Single';$null=$panel.Children.Add($list)
+ $filter.Add_TextChanged({$q=$filter.Text.Trim();$list.ItemsSource=@($items|Where-Object {!$q -or [string]$_.$display -like "*$q*"})})
+ $go.Add_Click({if($list.SelectedItem){try{& $action $list.SelectedItem}catch{$status.Text=$_.Exception.Message}}})
+ $d.Content=$panel;$null=$d.ShowDialog()
+}
+function OpenSoftwareCenter {
+ if(!(Get-Command winget -ErrorAction SilentlyContinue)){throw 'WinGet non disponibile: installa App Installer da Microsoft Store'}
+ $items=@(SoftwareCatalog)
+ ModuleDialog 'Software Center / WinGet' 'Catalogo di candidati. Ogni ID viene verificato sul repository winget prima di installare. Nessuna installazione automatica in blocco.' $items 'Label' 'VERIFICA E INSTALLA' {
+  param($item)
+  $id=[string]$item.Id
+  if($id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]{1,99}$' -or $id -notin @(SoftwareCatalog|ForEach-Object Id)){throw 'ID non autorizzato'}
+  $details=& winget show --id $id --exact --source winget --disable-interactivity 2>&1
+  if($LASTEXITCODE -ne 0){$status.Text="ID non verificato: $id";return}
+  if(!(ConfirmDark "Installare $($item.Name)?" ($details|Out-String))){return}
+  $job=Start-Process -FilePath (Get-Command winget).Source -ArgumentList @('install','--id',$id,'--exact','--source','winget','--interactive') -PassThru -Wait
+  $result=if($job.ExitCode -eq 0){'COMANDO RIUSCITO - verifica elenco installato'}else{"ERRORE/ANNULLATO: $($job.ExitCode)"}
+  Event "WinGet: $id" 'Installazione richiesta' $job.ExitCode $result
+  UpdateLog;$status.Text=$result
+ }
+}
+function GetFeatureInventory{
+ @(Get-CimInstance Win32_OptionalFeature -ErrorAction Stop|ForEach-Object {
+  $state=switch([int]$_.InstallState){1{'Abilitata'} 2{'Disabilitata'} 3{'Assente'} default{'Sconosciuta'}}
+  [pscustomobject]@{Name=$_.Name;State=$state;Label="$state  |  $($_.Name)"}
+ }|Sort-Object Name)
+}
+function OpenFeatureCenter{
+ $features=@(GetFeatureInventory)
+ ModuleDialog 'Funzionalita Windows' 'Inventario delle funzionalita del sistema. L attivazione/rimozione resta nel gestore ufficiale Windows, che controlla dipendenze e richiede elevazione quando necessaria. Non disabilitare componenti usati da giochi, WSL o virtualizzazione.' $features 'Label' 'APRI GESTORE WINDOWS' {
+  param($item)
+  Start-Process optionalfeatures.exe
+  Event 'Funzionalita Windows' $item.Name 'Gestore ufficiale aperto' 'GUIDATO'
+  UpdateLog
+ }
+}
+function GetServiceInventory {
+ @(Get-CimInstance Win32_Service|ForEach-Object {
+  [pscustomobject]@{Name=$_.Name;State=$_.State;StartMode=$_.StartMode;Label="$($_.StartMode) / $($_.State)  |  $($_.DisplayName) [$($_.Name)]"}
+ }|Sort-Object Label)
+}
+function OpenServiceCenter {
+ ModuleDialog 'Servizi Windows / Inventario' 'Inventario in sola lettura. I servizi non vengono arrestati o disabilitati automaticamente: possono avere dipendenze o essere necessari a sicurezza, rete e periferiche.' @(GetServiceInventory) 'Label' 'APRI SERVIZI WINDOWS' {
+  param($item)
+  Start-Process services.msc
+  Event 'Servizi Windows' $item.Name 'Gestore ufficiale aperto' 'GUIDATO'
+  UpdateLog
+ }
+}
+function ExtendedDiagnostics {
+ $out=[ordered]@{}
+ $out.Power=(& powercfg /getactivescheme|Out-String).Trim()
+ $out.Adapter=@(Get-NetAdapter -ErrorAction SilentlyContinue|Select-Object Name,Status,LinkSpeed,InterfaceDescription)
+ $out.DNS=@(Get-DnsClientServerAddress -ErrorAction SilentlyContinue|Select-Object InterfaceAlias,AddressFamily,ServerAddresses)
+ $out.NetworkCounters=@(Get-NetAdapterStatistics -ErrorAction SilentlyContinue|Select-Object Name,ReceivedDiscardedPackets,ReceivedPacketErrors,OutboundDiscardedPackets,OutboundPacketErrors)
+ $out.Storage=@(Get-PhysicalDisk -ErrorAction SilentlyContinue|Select-Object FriendlyName,MediaType,HealthStatus,OperationalStatus,Size)
+ $out.GPU=@(Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion,CurrentRefreshRate)
+ $out.DriverIssues=@(Get-CimInstance Win32_PnPEntity -Filter 'ConfigManagerErrorCode <> 0' -ErrorAction SilentlyContinue|Select-Object Name,ConfigManagerErrorCode)
+ $out.Audio=@(Get-CimInstance Win32_SoundDevice|Select-Object Name,Status)
+ $out.UpdateService=@(Get-Service wuauserv,BITS,DoSvc -ErrorAction SilentlyContinue|Select-Object Name,Status,StartType)
+ $out.Features=@(GetFeatureInventory|Select-Object Name,State)
+ $out.Services=@(GetServiceInventory|Group-Object StartMode|Select-Object Name,Count)
+ $out.Note='Counters are cumulative snapshots; no conclusion about bottlenecks or latency from these alone.'
+ return $out
+}
+function ShowExtendedDiagnostics{
+ $data=ExtendedDiagnostics
+ $file=Join-Path $root ('extended-'+[guid]::NewGuid().ToString()+'.json')
+ Atomic $file $data
+ $w.FindName('Report').Text=$data|ConvertTo-Json -Depth 8
+ $w.FindName('Tabs').SelectedIndex=1
+ $status.Text="Diagnostica estesa: $file"
+}
+
+function OpenGPUPreference {
+ $dlg=New-Object Microsoft.Win32.OpenFileDialog
+ $dlg.Title='Seleziona eseguibile del gioco'
+ $dlg.Filter='Applicazioni Windows (*.exe)|*.exe'
+ if($dlg.ShowDialog($w) -ne $true){return}
+ $exe=[IO.Path]::GetFullPath($dlg.FileName)
+ if(!(Test-Path -LiteralPath $exe -PathType Leaf)){throw 'Eseguibile non trovato'}
+ $path='Software\Microsoft\DirectX\UserGpuPreferences'
+ $before=ReadValue $path $exe
+ if($before.Exists -and $before.Kind -ne 'String'){throw 'Formato esistente non supportato'}
+ $old=if($before.Exists){[string]$before.Value}else{''}
+ $parts=@($old.Split(';')|Where-Object {$_ -and $_ -notmatch '^GpuPreference='})
+ $new=(@($parts)+@('GpuPreference=2')) -join ';'
+ $new+=';'
+ $item=MakeString ('GPU preferita: '+[IO.Path]::GetFileName($exe)) 'GPU' $path $exe $new 'Preferenza Windows alta prestazione, non overclock; preserva altri campi'
+ $msg="Eseguibile: $exe"+[Environment]::NewLine+"Prima: $($item.Before)"+[Environment]::NewLine+"Dopo: $($item.After)"+[Environment]::NewLine+'Utile soprattutto con piu GPU; non forza FPS superiori. Riavvia il gioco dopo il cambio.'
+ if(!(ConfirmDark 'Preferenza GPU per gioco' $msg)){return}
+ ApplyValue $item
+ RefreshRows
+ $status.Text='Preferenza GPU scritta e verificata; ripristinabile. Riavvia il gioco.'
+}
+
+function Catalog{
+ $cd='Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+ $ex='Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+ Make 'Windows Game Mode' 'Gaming' 'Software\Microsoft\GameBar' 'AutoGameModeEnabled' 1 'Gaming' 'Attiva Game Mode; beneficio dipende dal gioco'
+ Make 'Registrazione game in background' 'Gaming' 'Software\Microsoft\Windows\CurrentVersion\GameDVR' 'AppCaptureEnabled' 0 'OptIn' 'Disabilita cattura Windows; non modifica Medal'
+ Make 'Suggerimenti e app promosse' 'Debloat' $cd 'SilentInstalledAppsEnabled' 0 'Safe' 'Preferenza utente; il supporto varia per build'
+ Make 'Contenuti suggeriti' 'Debloat' $cd 'ContentDeliveryAllowed' 0 'Safe' 'Preferenza utente per contenuti promossi; verifica dopo aggiornamenti'
+ Make 'Suggerimenti in Impostazioni' 'Debloat' $cd 'SubscribedContent338393Enabled' 0 'Safe' 'Preferenza utente; effetto dipende dalla versione'
+ Make 'Suggerimenti Windows' 'Debloat' $cd 'SubscribedContent338389Enabled' 0 'Safe' 'Preferenza utente; effetto dipende dalla versione'
+ Make 'Pubblicita in Esplora file' 'Debloat' $ex 'ShowSyncProviderNotifications' 0 'Safe' 'Riduce notifiche promozionali del provider di sincronizzazione'
+ Make 'Esperienze personalizzate' 'Privacy' 'Software\Microsoft\Windows\CurrentVersion\Privacy' 'TailoredExperiencesWithDiagnosticDataEnabled' 0 'Safe' 'Non disattiva la diagnostica obbligatoria'
+ $os=Get-CimInstance Win32_OperatingSystem
+ if([int]$os.BuildNumber -ge 22000){Make 'Pulsante Widget nella barra' 'Debloat' $ex 'TaskbarDa' 0 'OptIn' 'Nasconde il pulsante; non rimuove componenti'}
+# Additional per-user preferences. Opt-in for behavior changes.
+ Make 'Privacy ID pubblicitario' 'Privacy' 'Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' 'Enabled' 0 'Safe' 'Disabilita ID pubblicitario utente'
+ Make 'Suggerimenti schermata di benvenuto' 'Debloat' $cd 'SubscribedContent310093Enabled' 0 'Safe' 'Preferenza per esperienze di benvenuto'
+ Make 'Suggerimenti in Timeline' 'Debloat' $cd 'SubscribedContent338388Enabled' 0 'Safe' 'Preferenza contenuti suggeriti'
+ Make 'Suggerimenti in Start' 'Debloat' $cd 'SystemPaneSuggestionsEnabled' 0 'Safe' 'Preferenza; dipende dalla build'
+ Make 'Suggerimenti post configurazione' 'Debloat' 'Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement' 'ScoobeSystemSettingEnabled' 0 'Safe' 'Riduce inviti a completare la configurazione'
+ Make 'Notifiche suggerimenti' 'Debloat' 'Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.Suggested' 'Enabled' 0 'Safe' 'Solo notifiche di suggerimenti'
+ Make 'Feedback richiesto' 'Privacy' 'Software\Microsoft\Siuf\Rules' 'NumberOfSIUFInPeriod' 0 'OptIn' 'Preferenza frequenza feedback; non blocca telemetria obbligatoria'
+ Make 'Risultati web nella ricerca Start' 'Privacy' 'Software\Policies\Microsoft\Windows\Explorer' 'DisableSearchBoxSuggestions' 1 'OptIn' 'Preferenza ricerca; policy e supporto dipendono dalla build'
+ Make 'Trasparenza interfaccia' 'Visual' 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency' 0 'Gaming' 'Riduce effetti visivi; nessuna promessa FPS'
+ Make 'Animazioni barra applicazioni' 'Visual' $ex 'TaskbarAnimations' 0 'Gaming' 'Riduce animazioni shell'
+ Make 'Estensioni file visibili' 'Explorer' $ex 'HideFileExt' 0 'Safe' 'Mostra estensioni dei file; sicurezza e usabilita'
+ Make 'File nascosti visibili' 'Explorer' $ex 'Hidden' 1 'OptIn' 'Mostra file nascosti; non mostra file protetti di sistema'
+ Make 'Apertura Esplora file: Questo PC' 'Explorer' $ex 'LaunchTo' 1 'OptIn' 'Preferenza navigazione'
+ Make 'File recenti in Home' 'Privacy' 'Software\Microsoft\Windows\CurrentVersion\Explorer' 'ShowRecent' 0 'OptIn' 'Non mostra file recenti in Home'
+ Make 'Cartelle frequenti in Home' 'Privacy' 'Software\Microsoft\Windows\CurrentVersion\Explorer' 'ShowFrequent' 0 'OptIn' 'Non mostra cartelle frequenti in Home'
+ Make 'Cronologia app avviate' 'Privacy' $ex 'Start_TrackProgs' 0 'OptIn' 'Influisce sui suggerimenti basati sulle app'
+ Make 'Evidenziazioni ricerca' 'Debloat' 'Software\Microsoft\Windows\CurrentVersion\SearchSettings' 'IsDynamicSearchBoxEnabled' 0 'Safe' 'Riduce contenuti dinamici della ricerca'
+ Make 'Icona Task View' 'Visual' $ex 'ShowTaskViewButton' 0 'OptIn' 'Nasconde solo il pulsante; Win+Tab resta disponibile'
+ Make 'Tema app scuro' 'Visual' 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'AppsUseLightTheme' 0 'OptIn' 'Preferenza tema Windows, non impone tema a tutte le app'
+ Make 'Tema sistema scuro' 'Visual' 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'SystemUsesLightTheme' 0 'OptIn' 'Preferenza tema Windows'
+ Make 'Cattura gioco Game DVR' 'Gaming' 'System\GameConfigStore' 'GameDVR_Enabled' 0 'OptIn' 'Disabilita cattura Windows; scegliere solo se non usata'
+ if([int]$os.BuildNumber -ge 22000){
+  Make 'Barra applicazioni: ricerca nascosta' 'Visual' 'Software\Microsoft\Windows\CurrentVersion\Search' 'SearchboxTaskbarMode' 0 'OptIn' 'Ricerca da Start resta disponibile'
+  Make 'Allineamento barra a sinistra' 'Visual' $ex 'TaskbarAl' 0 'OptIn' 'Solo preferenza estetica'
+ }
+
+ AdditionalCatalog
+ MoreCatalog
+ $run='Software\Microsoft\Windows\CurrentVersion\Run'
+ $allow=@('Discord','Steam','Spotify','EpicGamesLauncher','Epic Games Launcher','Battle.net','EADM','electron.app.CurseForge','WallpaperEngine','Opera Stable','RiotClient','electron.app.BlueStacks Services')
+ foreach($name in $allow){
+  $old=ReadValue $run $name
+  if($old.Exists -and $old.Kind -in @('String','ExpandString')){
+   [pscustomobject]@{Name="Avvio: $name";Category='Startup';Path=$run;Key=$name;TargetState=[pscustomobject]@{Exists=$false;Kind='';Value=$null};Before='Attivo in Run';After='Rimosso da Run';Status='DISPONIBILE';Level='OptIn';Note='App resta installata; non chiude processi; avvio automatico da altre fonti possibile';Selected=$false}
+  }
+ }
+}
+function Inventory{
+ $os=Get-CimInstance Win32_OperatingSystem
+ $cpu=Get-CimInstance Win32_Processor|Select-Object Name,NumberOfCores,NumberOfLogicalProcessors
+ $gpu=Get-CimInstance Win32_VideoController|Select-Object Name,DriverVersion,CurrentRefreshRate
+ $disk=Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3'|ForEach-Object {[pscustomobject]@{Drive=$_.DeviceID;FreeGiB=[math]::Round($_.FreeSpace/1GB,1);FreePct=[math]::Round(100*$_.FreeSpace/[math]::Max([double]1,[double]$_.Size),1)}}
+ $apps=@(Get-AppxPackage|Where-Object {!$_.IsFramework -and !$_.NonRemovable}|Select-Object Name,PackageFullName)
+ [ordered]@{Time=(Get-Date).ToString('o');Windows=$os.Caption;Build=$os.BuildNumber;CPU=@($cpu);GPU=@($gpu);RAMGiB=[math]::Round($os.TotalVisibleMemorySize/1MB,1);FreeRAMGiB=[math]::Round($os.FreePhysicalMemory/1MB,1);PowerPlan=((& powercfg /getactivescheme)|Out-String).Trim();Disks=@($disk);Startup=@(Get-CimInstance Win32_StartupCommand|Select-Object Name,Location);HeavyRAM=@(Get-Process|Sort-Object WorkingSet64 -Descending|Select-Object -First 12 ProcessName,WorkingSet64);OptionalApps=$apps;Network=@(Get-NetAdapter -ErrorAction SilentlyContinue|Select-Object Name,Status,LinkSpeed);Notes='Analisi locale; non identifica da sola colli di bottiglia o incremento FPS.'}
+}
+function SaveScan{
+ $items=@(Catalog);$inv=Inventory
+ $file=Join-Path $root ('scan-'+[guid]::NewGuid().ToString()+'.json')
+ Atomic $file @{Inventory=$inv;Findings=@($items|Select-Object Name,Category,Before,After,Status,Note)}
+ $file
+}
+function OptionalPackages {
+ $allow=@('Microsoft.BingNews','Microsoft.BingWeather','Microsoft.MicrosoftSolitaireCollection','Microsoft.WindowsFeedbackHub','Microsoft.GetHelp','Microsoft.Getstarted','Microsoft.WindowsMaps','Microsoft.MicrosoftOfficeHub','Clipchamp.Clipchamp','Microsoft.ZuneMusic','Microsoft.ZuneVideo','MSTeams','Microsoft.Todos','Microsoft.YourPhone','Microsoft.WindowsSoundRecorder','Microsoft.WindowsAlarms','Microsoft.PowerAutomateDesktop','Microsoft.Windows.DevHome','Microsoft.MicrosoftStickyNotes','MicrosoftCorporationII.QuickAssist','Microsoft.Copilot','Microsoft.BingSearch','Microsoft.Microsoft3DViewer','Microsoft.MSPaint','Microsoft.MixedReality.Portal','Microsoft.Print3D','Microsoft.SkypeApp','Microsoft.People','Microsoft.WindowsCamera','Microsoft.Windows.Photos','Microsoft.WindowsCalculator','Microsoft.WindowsNotepad','Microsoft.Paint','Microsoft.WindowsReadingList')
+ @(Get-AppxPackage | Where-Object {$_.Name -in $allow -and !$_.IsFramework -and !$_.NonRemovable} | Sort-Object Name)
+}
+function RemoveOptionalApps {
+ $packages=@(OptionalPackages)
+ if(!$packages.Count){$status.Text='Nessuna app opzionale rilevata';return}
+ $dlg=New-Object Windows.Window
+ $dlg.Background='#0B1220';$dlg.Foreground='#E3ECF9';$dlg.Resources.MergedDictionaries.Add($w.Resources);SetDarkChrome $dlg;$dlg.Title='Debloat app opzionali - selezione manuale';$dlg.Width=640;$dlg.Height=440;$dlg.Owner=$w;$dlg.WindowStartupLocation='CenterOwner'
+ $panel=New-Object Windows.Controls.DockPanel;$panel.Margin='12'
+ $note=New-Object Windows.Controls.TextBlock;$note.Text='Seleziona solo app che non usi. Rimozione per utente corrente: dati e preferenze possono andare persi. Il ripristino automatico non e garantito.';$note.TextWrapping='Wrap';$note.Margin='0,0,0,10'
+ [Windows.Controls.DockPanel]::SetDock($note,'Top');$null=$panel.Children.Add($note)
+ $btn=New-Object Windows.Controls.Button;$btn.Content='Rimuovi selezionate';$btn.Padding='12';[Windows.Controls.DockPanel]::SetDock($btn,'Bottom');$null=$panel.Children.Add($btn)
+ $lb=New-Object Windows.Controls.ListBox;$lb.SelectionMode='Multiple';$lb.DisplayMemberPath='Name';$lb.ItemsSource=$packages;$null=$panel.Children.Add($lb)
+ $dlg.Content=$panel
+ $btn.Add_Click({if($lb.SelectedItems.Count){$dlg.DialogResult=$true}})
+ if($dlg.ShowDialog() -ne $true){return}
+ $chosen=@($lb.SelectedItems | ForEach-Object {$_})
+ $preview=($chosen|ForEach-Object Name)-join [Environment]::NewLine
+ if(!(ConfirmDark 'Conferma disinstallazione' "Disinstallare queste app per l'utente corrente? Il ripristino non e automatico e i dati potrebbero andare persi.$([Environment]::NewLine)$preview")){return}
+ $ok=0;$fail=0
+ foreach($app in $chosen){
+  try{
+   $name=$app.Name
+   $current=@(OptionalPackages|Where-Object PackageFullName -eq $app.PackageFullName)
+   if(!$current.Count){throw 'Pacchetto non piu disponibile'}
+   Event $name 'Installato' 'In attesa' 'RIMOZIONE RICHIESTA'
+   Remove-AppxPackage -Package $app.PackageFullName -ErrorAction Stop
+   if(Get-AppxPackage -Name $name){throw 'Pacchetto ancora presente'}
+   Event $name 'Installato' 'Rimosso per utente corrente' 'VERIFICATO - reinstallazione manuale Store';$ok++
+  }catch{Event $app.Name 'Installato' '?' ('ERRORE: '+$_.Exception.Message);$fail++}
+ }
+ UpdateLog;$w.FindName('Tabs').SelectedIndex=2;$status.Text="App rimosse: $ok; errori: $fail. Per reinstallazione usare Microsoft Store; dati non garantiti."
+}
+
+if($SelfTest){
+ $test='Software\BrabusPC-Test-'+[guid]::NewGuid().ToString()
+ $tmp=Join-Path $env:TEMP ('BrabusTest-'+[guid]::NewGuid().ToString())
+ $null=New-Item -ItemType Directory $tmp
+  $backupDir=$tmp;$legacyJournal=Join-Path $tmp 'legacy.json';$journal=Join-Path $tmp 'active.json';$mirror=Join-Path $tmp 'mirror.json';$log=Join-Path $tmp 'log.jsonl'
+ try{
+  $one=Make 'Test' 'Test' $test 'Missing' 1 'Safe' 'test'
+  ApplyValue $one
+  $two=Make 'Test2' 'Test' $test 'Second' 0 'Safe' 'test'
+  ApplyValue $two
+  if(@(ReadJournal).Count -ne 2){throw 'Journal'}
+  if((ReadValue $test 'Missing').Value -ne 1){throw 'Write'}
+  RestoreAll
+  if((ReadValue $test 'Missing').Exists -or (ReadValue $test 'Second').Exists -or @(ReadJournal).Count){throw 'Restore'}
+  $testCatalog=@(Catalog);if($testCatalog.Count -lt 65){throw "Catalog expansion missing"};if(@($testCatalog|Group-Object Path,Key|Where-Object Count -gt 1).Count){throw "Duplicate catalog keys"}
+  Write-Output 'PASS registry test keys, two backups, verification, rollback, catalog'
+ }finally{[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($test,$false);Remove-Item -LiteralPath $tmp -Recurse -Force}
+ exit 0
+}
+$mutex=New-Object Threading.Mutex($false,'Local\BrabusPCDebloater')
+try{$locked=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$locked=$true}
+if(!$locked){throw 'Debloater gia aperto'}
+try{
+if(!$UiTest -and !$Scan){MigrateLegacy}; if($Undo){RestoreAll;Write-Output 'Ripristino completato';exit 0}
+if($Scan){SaveScan;exit 0}
+Add-Type -AssemblyName PresentationFramework
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class BrabusDwm {
+ [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd,int attr,ref int value,int size);
+}
+"@
+[xml]$x=@'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="BRABUS UTIL | ONE-SHOT DEBLOATER" Width="1280" Height="820" MinWidth="970" MinHeight="650" Background="#080D16" Foreground="#DCE9FC" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13">
+<Window.Resources>
+<SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#101B2A"/>
+<SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#E3ECF9"/>
+<SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#17283C"/>
+<SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#E3ECF9"/>
+<SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#174862"/>
+<SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
+<Style TargetType="TextBlock"><Setter Property="Foreground" Value="#DCE9FC"/></Style>
+<Style TargetType="Button">
+<Setter Property="Background" Value="#17283C"/><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="Padding" Value="14,10"/><Setter Property="Margin" Value="3"/><Setter Property="Cursor" Value="Hand"/><Setter Property="BorderBrush" Value="#29445F"/>
+<Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="#24435B"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="Background" Value="#126480"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value=".45"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#5CE1F5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+</Style>
+<Style TargetType="CheckBox"><Setter Property="Foreground" Value="#E3ECF9"/><Setter Property="HorizontalAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><StackPanel Orientation="Horizontal"><Border x:Name="cb" Width="18" Height="18" Background="#0C1726" BorderBrush="#52718A" BorderThickness="1" CornerRadius="3"><Path x:Name="tick" Data="M 3,9 L 7,13 L 15,4" Stroke="#071521" StrokeThickness="2.5" Visibility="Collapsed"/></Border><ContentPresenter Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="cb" Property="Background" Value="#43D7E8"/><Setter TargetName="tick" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value=".5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType="TextBox"><Setter Property="Background" Value="#101B2A"/><Setter Property="Foreground" Value="#E3ECF9"/><Setter Property="CaretBrush" Value="#43D7E8"/><Setter Property="SelectionBrush" Value="#24758D"/><Setter Property="BorderBrush" Value="#29445F"/><Setter Property="Padding" Value="9"/></Style>
+<Style TargetType="TabControl"><Setter Property="Background" Value="#0E1928"/><Setter Property="BorderBrush" Value="#253B50"/><Setter Property="Padding" Value="6"/></Style>
+<Style TargetType="TabItem"><Setter Property="Foreground" Value="#9EB5CC"/><Setter Property="Background" Value="#111F32"/><Setter Property="Padding" Value="14,9"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem"><Border x:Name="tab" Background="{TemplateBinding Background}" BorderBrush="#253B50" BorderThickness="1" CornerRadius="5,5,0,0" Padding="{TemplateBinding Padding}" Margin="2,0"><ContentPresenter ContentSource="Header"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="tab" Property="Background" Value="#173A50"/><Setter Property="Foreground" Value="#5CE1F5"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="tab" Property="BorderBrush" Value="#43D7E8"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType="DataGrid"><Setter Property="Background" Value="#0D1725"/><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="RowBackground" Value="#111F30"/><Setter Property="AlternatingRowBackground" Value="#152539"/><Setter Property="BorderBrush" Value="#253B50"/><Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="#24384E"/><Setter Property="HeadersVisibility" Value="Column"/><Setter Property="RowHeight" Value="36"/><Setter Property="ColumnHeaderHeight" Value="39"/></Style>
+<Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="#20354A"/><Setter Property="Foreground" Value="#99DDE8"/><Setter Property="BorderBrush" Value="#29445F"/><Setter Property="BorderThickness" Value="0,0,1,1"/><Setter Property="Padding" Value="8"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+<Style TargetType="DataGridRow"><Setter Property="Foreground" Value="#DCE9FC"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#174862"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></Style.Triggers></Style>
+<Style TargetType="DataGridCell"><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="Padding" Value="6"/><Setter Property="BorderThickness" Value="0"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#174862"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></Style.Triggers></Style>
+<Style TargetType="ListBox"><Setter Property="Background" Value="#101B2A"/><Setter Property="Foreground" Value="#E3ECF9"/><Setter Property="BorderBrush" Value="#29445F"/></Style>
+<Style TargetType="ListBoxItem"><Setter Property="Foreground" Value="#E3ECF9"/><Setter Property="Padding" Value="8"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#174862"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></Style.Triggers></Style>
+<Style TargetType="ScrollBar"><Setter Property="Background" Value="#0D1725"/><Setter Property="Width" Value="13"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="#0D1725"><Track x:Name="PART_Track" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Background="Transparent" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="#3B5A72" CornerRadius="4" Margin="2"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Background="Transparent" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton></Track></Grid><ControlTemplate.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="13"/></Trigger></Style.Triggers></Style>
+</Window.Resources>
+<Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+<Border Background="#111F32" CornerRadius="12" Padding="17"><DockPanel><StackPanel DockPanel.Dock="Right" VerticalAlignment="Center"><TextBlock Text="PRIVATE EDITION  /  1.4" Foreground="#5CE1F5" FontWeight="Bold"/><TextBlock Text="LOCAL  |  NO AI  |  NO RESIDENT PROCESS" FontSize="11" Foreground="#9EB5CC"/></StackPanel><StackPanel><TextBlock Text="BRABUS / UTIL" FontSize="34" Foreground="#43D7E8" FontWeight="Bold"/><TextBlock Text="ONE-SHOT DEBLOATER  /  SCAN - APPLY - VERIFY - CLOSE" Foreground="#9EB5CC"/><TextBlock Name="Hardware" Foreground="#DCE9FC" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></DockPanel></Border>
+<Grid Grid.Row="1" Margin="0,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+<Border Background="#122236" CornerRadius="8" Padding="12" Margin="0,0,6,0"><StackPanel><TextBlock Text="CATALOGO COMPATIBILE" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Total" Text="--" FontSize="24" FontWeight="Bold" Foreground="#43D7E8"/></StackPanel></Border>
+<Border Grid.Column="1" Background="#122236" CornerRadius="8" Padding="12" Margin="3,0"><StackPanel><TextBlock Text="MARGINI DI INTERVENTO" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Available" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F4C77B"/></StackPanel></Border>
+<Border Grid.Column="2" Background="#122236" CornerRadius="8" Padding="12" Margin="6,0,0,0"><StackPanel><TextBlock Text="GIA CONFIGURATI / BACKUP" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Done" Text="--" FontSize="24" FontWeight="Bold" Foreground="#73E6AE"/></StackPanel></Border>
+</Grid>
+<Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="235"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+<Border Background="#111F32" CornerRadius="10" Padding="12" Margin="0,0,10,0"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+<TextBlock Text="01 / PRESET" Foreground="#43D7E8" FontWeight="Bold" Margin="4,4,0,8"/>
+<Button Name="Scan" Content="ANALIZZA PC"/><Button Name="Safe" Content="SAFE / Essenziale"/><Button Name="Gaming" Content="GAMING / Prestazioni"/><Button Name="Ultimate" Content="ULTIMATE / Esteso"/><Button Name="Clear" Content="DESELEZIONA TUTTO"/><Button Name="Export" Content="ESPORTA PRESET"/><Button Name="Import" Content="IMPORTA PRESET"/>
+<TextBlock Text="02 / STRUMENTI" Foreground="#43D7E8" FontWeight="Bold" Margin="4,16,0,8"/>
+<Button Name="Debloat" Content="RIMUOVI APP OPZIONALI"/><Button Name="Apps" Content="APP INSTALLATE"/><Button Name="Startup" Content="AVVIO WINDOWS"/><Button Name="Power" Content="PIANI ENERGETICI"/><Button Name="Storage" Content="ARCHIVIAZIONE"/><Button Name="Graphics" Content="GRAFICA WINDOWS"/><Button Name="GpuApp" Content="GPU PER GIOCO"/><Button Name="Software" Content="SOFTWARE CENTER"/><Button Name="Features" Content="FUNZIONALITA WINDOWS"/><Button Name="Services" Content="SERVIZI WINDOWS"/><Button Name="Diag" Content="DIAGNOSTICA AVANZATA"/><Button Name="Updates" Content="WINDOWS UPDATE"/><Button Name="Audio" Content="AUDIO E NOTIFICHE"/>
+<TextBlock Text="03 / RIPRISTINO" Foreground="#43D7E8" FontWeight="Bold" Margin="4,16,0,8"/>
+<Button Name="Backup" Content="BACKUP &amp; RECOVERY CENTER"/><Button Name="Undo" Content="RIPRISTINA TUTTI I TWEAK"/><Button Name="Files" Content="LOG E REPORT"/>
+<TextBlock Text="Defender, firewall, UAC e aggiornamenti intatti." Foreground="#73E6AE" TextWrapping="Wrap" Margin="4,12,0,0" FontSize="12"/>
+</StackPanel></ScrollViewer></Border>
+<TabControl Grid.Column="1" Name="Tabs"><TabItem Header="TWEAKS"><DockPanel Margin="6"><StackPanel DockPanel.Dock="Top" Margin="0,0,0,8"><TextBlock Text="CERCA NEL CATALOGO (nome, categoria o stato)" Foreground="#9EB5CC" FontSize="11"/><TextBox Name="Filter" Margin="0,4,0,0"/></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="230"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="100"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="100"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" IsReadOnly="True" Width="135"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem></TabControl></Grid>
+<Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="10" Margin="0,10,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
+</Grid></Window>
+'@
+$w=[Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
+if($UiTest){if(!$w.FindName('Grid') -or !$w.FindName('Debloat')){throw 'GUI test failed'}; foreach($id in @('GpuApp','Software','Features','Services','Diag','Updates','Audio')){if(!$w.FindName($id)){throw ('Missing GUI control: '+$id)}};$w.Close();Write-Output 'UI TEST OK';exit 0}
+$grid=$w.FindName('Grid');$status=$w.FindName('Status')
+function SetDarkChrome($win){
+ try{
+  $win.Add_SourceInitialized({
+   try{
+    $handle=(New-Object Windows.Interop.WindowInteropHelper $this).Handle
+    $v=1
+    $null=[BrabusDwm]::DwmSetWindowAttribute($handle,20,[ref]$v,4)
+   }catch{}
+  })
+ }catch{}
+}
+function ConfirmDark($title,$message){
+ $d=New-Object Windows.Window
+ $d.Title=$title;$d.Width=720;$d.Height=500;$d.Owner=$w;$d.WindowStartupLocation='CenterOwner';$d.Background='#0B1220';$d.Foreground='#E3ECF9';$d.Resources.MergedDictionaries.Add($w.Resources);SetDarkChrome $d
+ $p=New-Object Windows.Controls.DockPanel;$p.Margin='18'
+ $buttons=New-Object Windows.Controls.StackPanel;$buttons.Orientation='Horizontal';$buttons.HorizontalAlignment='Right';[Windows.Controls.DockPanel]::SetDock($buttons,'Bottom')
+ $yes=New-Object Windows.Controls.Button;$yes.Content='CONFERMA';$yes.Background='#0C7189';$yes.IsDefault=$false
+ $no=New-Object Windows.Controls.Button;$no.Content='ANNULLA';$no.IsCancel=$true
+ $null=$buttons.Children.Add($no);$null=$buttons.Children.Add($yes);$null=$p.Children.Add($buttons)
+ $tb=New-Object Windows.Controls.TextBox;$tb.Text=$message;$tb.IsReadOnly=$true;$tb.TextWrapping='Wrap';$tb.VerticalScrollBarVisibility='Auto';$tb.Margin='0,0,0,12';$null=$p.Children.Add($tb)
+ $d.Content=$p;$yes.Add_Click({$d.DialogResult=$true})
+ return ($d.ShowDialog() -eq $true)
+}
+function OpenRecoveryCenter{
+ $b=BackupStatus
+ $records=@(ReadJournal)
+ $d=New-Object Windows.Window
+ $d.Title='Backup & Recovery Center';$d.Width=960;$d.Height=680;$d.Owner=$w;$d.WindowStartupLocation='CenterOwner';$d.Background='#0B1220';$d.Foreground='#E3ECF9';$d.Resources.MergedDictionaries.Add($w.Resources);SetDarkChrome $d
+ $p=New-Object Windows.Controls.DockPanel;$p.Margin='16'
+ $head=New-Object Windows.Controls.TextBlock;$head.Text="BACKUP V2 | $($b.Pending) modifiche da ripristinare | $($b.Snapshots) snapshot storici. $($b.Warning)"+[Environment]::NewLine+'Seleziona uno o piu elementi per ripristinarli. I file storici sono consultabili, ma non vengono applicati come script.';$head.TextWrapping='Wrap';$head.Margin='0,0,0,12';[Windows.Controls.DockPanel]::SetDock($head,'Top');$null=$p.Children.Add($head)
+ $bar=New-Object Windows.Controls.StackPanel;$bar.Orientation='Horizontal';[Windows.Controls.DockPanel]::SetDock($bar,'Bottom')
+ $buttons=@('RIPRISTINA SELEZIONATI','ULTIMA SESSIONE ATTIVA','VERIFICA COPIE','APRI CARTELLA','CHIUDI')
+ $controls=@()
+ foreach($n in $buttons){$btn=New-Object Windows.Controls.Button;$btn.Content=$n;$null=$bar.Children.Add($btn);$controls+=$btn}
+ $controls[4].IsCancel=$true
+ $null=$p.Children.Add($bar)
+ $lb=New-Object Windows.Controls.ListBox;$lb.SelectionMode='Extended';$lb.DisplayMemberPath='Label'
+ $lb.ItemsSource=@($records|ForEach-Object {[pscustomobject]@{Id=$_.Id;BatchId=$_.BatchId;Label="$($_.Name)  |  $(Display $_.Target) -> $(Display $_.Old)  |  $($_.Time)  |  $($_.BatchId.Substring(0,8))"}})
+ $null=$p.Children.Add($lb)
+ $d.Content=$p
+ $controls[0].Add_Click({try{$ids=@($lb.SelectedItems|ForEach-Object Id);if($ids.Count -and (ConfirmDark 'Ripristino selettivo' "Ripristinare $($ids.Count) impostazioni?")){RestoreRecords $ids;$d.DialogResult=$true}}catch{$head.Text=$_.Exception.Message}})
+ $controls[1].Add_Click({try{$r=@(ReadJournal);if(!$r.Count){return};$batch=$r[-1].BatchId;$ids=@($r|Where-Object BatchId -eq $batch|ForEach-Object Id);if(ConfirmDark 'Ripristino sessione' "Ripristinare $($ids.Count) impostazioni dell ultima sessione attiva?"){RestoreRecords $ids;$d.DialogResult=$true}}catch{$head.Text=$_.Exception.Message}})
+ $controls[2].Add_Click({try{$v=BackupStatus;$head.Text="Record validi: $($v.Pending) | Snapshot: $($v.Snapshots) | $($v.Warning)";if(!$v.Warning){$head.Text+=' | Nessuna anomalia nelle copie disponibili'}}catch{$head.Text=$_.Exception.Message}})
+ $controls[3].Add_Click({Start-Process explorer.exe $backupDir})
+ $null=$d.ShowDialog()
+ RefreshRows
+}
+function UpdateDashboard{
+ $w.FindName('Total').Text=[string]$script:rows.Count
+ $w.FindName('Available').Text=[string]@($script:rows|Where-Object Status -eq 'DISPONIBILE').Count
+ try{$b=BackupStatus;$w.FindName('Done').Text=('{0} / {1}' -f @($script:rows|Where-Object Status -eq 'GIA CONFIGURATO').Count,$b.Pending);if($b.Warning){$status.Text=$b.Warning}}catch{$w.FindName('Done').Text='BACKUP ERROR';$status.Text=$_.Exception.Message}
+}
+function FilterRows{
+ $q=$w.FindName('Filter').Text.Trim()
+ $grid.ItemsSource=@($script:rows|Where-Object {!$q -or $_.Name -like "*$q*" -or $_.Category -like "*$q*" -or $_.Status -like "*$q*"})
+}
+function UpdateLog{if(Test-Path $log){$w.FindName('History').Text=(Get-Content $log -Tail 200)-join [Environment]::NewLine}}
+function RefreshRows{$script:rows=@(Catalog);FilterRows;UpdateDashboard;UpdateLog}
+function Guard($a){try{& $a}catch{$status.Text='ERRORE: '+$_.Exception.Message;UpdateLog}}
+function ProfileId($row){if($row.Path.StartsWith("POWER|")){"POWER|$($row.Path.Split("|")[2])|$($row.Key)"}else{"$($row.Path)|$($row.Key)"}}
+function ExportProfile{
+ $items=@($script:rows|Where-Object Selected|ForEach-Object {ProfileId $_})
+ if(!$items.Count){throw 'Seleziona almeno un tweak'}
+ $dlg=New-Object Microsoft.Win32.SaveFileDialog
+ $dlg.Filter='Brabus preset (*.brabus.json)|*.brabus.json';$dlg.FileName='Gaming.brabus.json'
+ if($dlg.ShowDialog($w) -ne $true){return}
+ Atomic $dlg.FileName @{Format='BrabusPreset';Version=1;Selections=$items}
+ $status.Text='Preset esportato: solo identificatori, nessun dato hardware o valore privato.'
+}
+function ImportProfile{
+ $dlg=New-Object Microsoft.Win32.OpenFileDialog
+ $dlg.Filter='Brabus preset (*.brabus.json)|*.brabus.json'
+ if($dlg.ShowDialog($w) -ne $true){return}
+ if((Get-Item -LiteralPath $dlg.FileName).Length -gt 1MB){throw 'Preset troppo grande'}
+ $p=Get-Content -LiteralPath $dlg.FileName -Raw|ConvertFrom-Json
+ if($p.Format -ne 'BrabusPreset' -or $p.Version -ne 1){throw 'Formato non valido'}
+ $ids=@($p.Selections|Where-Object {$_ -is [string]})
+ foreach($r in $script:rows){$r.Selected=($ids -contains (ProfileId $r) -and $r.Status -eq 'DISPONIBILE')}
+ $matched=@($script:rows|Where-Object Selected).Count
+ $known=@($script:rows|ForEach-Object {ProfileId $_})
+ $unknown=@($ids|Where-Object {$_ -notin $known}).Count
+ $grid.Items.Refresh()
+ $status.Text="Preset importato: $matched selezionati, $unknown non compatibili. Nessuna modifica applicata."
+}
+function SelectPreset($p){
+ foreach($r in $script:rows){$r.Selected=($r.Status -eq 'DISPONIBILE' -and ($r.Level -eq 'Safe' -or ($p -ne 'Safe' -and $r.Level -eq 'Gaming')))}
+ $grid.Items.Refresh()
+ $status.Text="${p}: selezionati $(@($script:rows|Where-Object Selected).Count) tweak conservativi. Le opzioni personali e di avvio restano manuali."
+}
+$w.FindName('Filter').Add_TextChanged({FilterRows})
+$w.FindName('Export').Add_Click({Guard {ExportProfile}})
+$w.FindName('Import').Add_Click({Guard {ImportProfile}})
+$w.FindName('Power').Add_Click({Start-Process control.exe -ArgumentList '/name','Microsoft.PowerOptions'})
+$w.FindName('Storage').Add_Click({Start-Process 'ms-settings:storagesense'})
+$w.FindName('Graphics').Add_Click({Start-Process 'ms-settings:display-advancedgraphics'})
+$w.FindName('GpuApp').Add_Click({Guard {OpenGPUPreference}})
+$w.FindName('Software').Add_Click({Guard {OpenSoftwareCenter}})
+$w.FindName('Features').Add_Click({Guard {OpenFeatureCenter}})
+$w.FindName('Services').Add_Click({Guard {OpenServiceCenter}})
+$w.FindName('Diag').Add_Click({Guard {ShowExtendedDiagnostics}})
+$w.FindName('Updates').Add_Click({Start-Process 'ms-settings:windowsupdate-options'})
+$w.FindName('Audio').Add_Click({Start-Process 'ms-settings:sound'})
+$w.FindName('Safe').Add_Click({SelectPreset 'Safe'})
+$w.FindName('Gaming').Add_Click({SelectPreset 'Gaming'})
+$w.FindName('Ultimate').Add_Click({SelectPreset 'Ultimate'})
+$w.FindName('Clear').Add_Click({foreach($r in $script:rows){$r.Selected=$false};$grid.Items.Refresh()})
+$w.FindName('Scan').Add_Click({Guard {$path=SaveScan;$w.FindName('Report').Text=Get-Content $path -Raw;RefreshRows;$w.FindName('Tabs').SelectedIndex=1;$status.Text="Report: $path"}})
+$w.FindName('Apps').Add_Click({Start-Process 'ms-settings:appsfeatures'}); $w.FindName('Debloat').Add_Click({Guard {RemoveOptionalApps}})
+$w.FindName('Startup').Add_Click({Start-Process 'ms-settings:startupapps'})
+$w.FindName('Files').Add_Click({Start-Process explorer.exe $root})
+$w.FindName('Backup').Add_Click({Guard {OpenRecoveryCenter}})
+$w.FindName('Undo').Add_Click({Guard {if(ConfirmDark 'Ripristino completo' 'Ripristinare tutte le modifiche gestite dal programma? Le modifiche esterne non saranno sovrascritte.'){RestoreAll;RefreshRows;$status.Text='Ripristino verificato'}}})
+$w.FindName('Apply').Add_Click({Guard {
+ $null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true);$null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
+ $sel=@($script:rows|Where-Object Selected)
+ if(!$sel.Count){$status.Text='Nessuna modifica selezionata';return}
+ $preview=($sel|ForEach-Object {"$($_.Name): $($_.Before) -> $($_.After)"})-join [Environment]::NewLine
+ if(!(ConfirmDark 'Conferma modifiche persistenti' $preview)){return}
+ $ok=0;$fail=0
+ $script:activeBatch=SnapshotRecords $sel
+ try{foreach($r in $sel){try{ApplyValue $r;$ok++}catch{$fail++;Event $r.Name '-' '-' $_.Exception.Message}}}finally{$script:activeBatch=$null}
+ RefreshRows;$w.FindName('Tabs').SelectedIndex=2
+ $status.Text="Operazioni verificate o gia configurate: $ok; errori: $fail. Puoi chiudere il programma. Alcune preferenze richiedono nuovo accesso."
+}})
+$cpu=(Get-CimInstance Win32_Processor|Select-Object -First 1).Name
+$gpu=(Get-CimInstance Win32_VideoController|ForEach-Object Name)-join ' / '
+$w.FindName('Hardware').Text="Hardware rilevato: $cpu / $gpu"
+RefreshRows;$status.Text='Scansione tweak completata. Nessuna modifica applicata. Seleziona un preset o singole voci.'
+SetDarkChrome $w; $null=$w.ShowDialog()
+}finally{$mutex.ReleaseMutex();$mutex.Dispose()}
