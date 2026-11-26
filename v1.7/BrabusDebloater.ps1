@@ -954,7 +954,7 @@ public static class BrabusDwm {
 <DataGridTextColumn Header="Elemento" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="Stato / Valore" Binding="{Binding State}" Width="*"/><DataGridTextColumn Header="Informazioni" Binding="{Binding Detail}" Width="3*"/>
 </DataGrid.Columns></DataGrid>
 </DockPanel></TabItem><TabItem Header="NETWORK CENTER"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="9">
-<Border CornerRadius="10" Padding="15" Margin="0,0,0,9"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#173C55" Offset="0"/><GradientStop Color="#102031" Offset="1"/></LinearGradientBrush></Border.Background><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Text="CLOUDFLARE  /  HTTPS + ICMP" FontSize="11" Foreground="#AFC9DF" VerticalAlignment="Center"/><TextBlock Text="NETWORK / SPEED LAB" FontSize="25" FontWeight="Bold" Foreground="#43D7E8"/></DockPanel><TextBlock Name="NetLink" Text="--" Foreground="#73E6AE" Margin="0,5,0,3"/><TextBlock Name="NetAdmin" FontSize="11" Foreground="#AFC9DF"/><TextBlock Text="Test prolungato ~30 s | HTTPS singola connessione | limite 1,3 GB. Nessuna modifica automatica." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,0"/></StackPanel></Border>
+<Border CornerRadius="10" Padding="15" Margin="0,0,0,9"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#173C55" Offset="0"/><GradientStop Color="#102031" Offset="1"/></LinearGradientBrush></Border.Background><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Text="CLOUDFLARE  /  MULTISTREAM V2" FontSize="11" Foreground="#AFC9DF" VerticalAlignment="Center"/><TextBlock Text="NETWORK / SPEED LAB" FontSize="25" FontWeight="Bold" Foreground="#43D7E8"/></DockPanel><TextBlock Name="NetLink" Text="--" Foreground="#73E6AE" Margin="0,5,0,3"/><TextBlock Name="NetAdmin" FontSize="11" Foreground="#AFC9DF"/><TextBlock Text="Test avanzato ~30-37 s | 2 flussi HTTPS | limite 1,3 GB. Ping a riposo e sotto carico." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,0"/></StackPanel></Border>
 <UniformGrid Columns="2" Margin="0,0,0,6">
 <Border Background="#12263A" CornerRadius="8" Padding="13" Margin="0,0,4,0"><StackPanel><TextBlock Text="DOWNLOAD / Mbps" Foreground="#AFC9DF" FontSize="12"/><TextBlock Name="NetDown" Text="--" FontSize="42" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Text="Velocita ricezione HTTPS" FontSize="11"/></StackPanel></Border>
 <Border Background="#12263A" CornerRadius="8" Padding="13" Margin="4,0,0,0"><StackPanel><TextBlock Text="UPLOAD / Mbps" Foreground="#AFC9DF" FontSize="12"/><TextBlock Name="NetUp" Text="--" FontSize="42" FontWeight="Bold" Foreground="#A9C9FA"/><TextBlock Text="Velocita invio HTTPS" FontSize="11"/></StackPanel></Border>
@@ -964,7 +964,10 @@ public static class BrabusDwm {
 <Border Background="#12263A" CornerRadius="8" Padding="10" Margin="3,0"><StackPanel><TextBlock Text="JITTER / ms" FontSize="11"/><TextBlock Name="NetJitter" Text="--" FontSize="26" Foreground="#F4C77B" FontWeight="Bold"/></StackPanel></Border>
 <Border Background="#12263A" CornerRadius="8" Padding="10" Margin="3,0,0,0"><StackPanel><TextBlock Text="LOSS / %" FontSize="11"/><TextBlock Name="NetLoss" Text="--" FontSize="26" Foreground="#A9C9FA" FontWeight="Bold"/></StackPanel></Border>
 </UniformGrid>
-<Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetHistory" Content="CRONOLOGIA TEST"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
+<UniformGrid Columns="2" Margin="0,0,0,6">
+<Border Background="#12263A" CornerRadius="8" Padding="10" Margin="0,0,4,0"><StackPanel><TextBlock Text="PING SOTTO DOWNLOAD / ms" Foreground="#AFC9DF" FontSize="11"/><TextBlock Name="NetDownLoaded" Text="--" FontSize="26" FontWeight="Bold" Foreground="#F4C77B"/><TextBlock Text="Media ICMP durante il traffico" FontSize="11"/></StackPanel></Border>
+<Border Background="#12263A" CornerRadius="8" Padding="10" Margin="4,0,0,0"><StackPanel><TextBlock Text="PING SOTTO UPLOAD / ms" Foreground="#AFC9DF" FontSize="11"/><TextBlock Name="NetUpLoaded" Text="--" FontSize="26" FontWeight="Bold" Foreground="#F4C77B"/><TextBlock Text="Media ICMP durante il traffico" FontSize="11"/></StackPanel></Border>
+</UniformGrid><Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING A RIPOSO" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetHistory" Content="CRONOLOGIA TEST"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
 <Border Background="#14283B" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><TextBlock Text="DNS ATTUALI / INTERFACCE" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="NetInfo" Text="--" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Border>
 <TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Spunta le voci o usa Seleziona tutto. Driver: admin e riavvio manuale; browser: backup originale. Voci gia configurate o con backup attivo escluse." TextWrapping="Wrap" Foreground="#AFC9DF"/>
 <DataGrid Name="NetGrid" IsReadOnly="False" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsEnabled="{Binding CanSelect}" IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding SelectionHint}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" IsReadOnly="True" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding VerifiedStatus}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid>
@@ -972,7 +975,7 @@ public static class BrabusDwm {
 </StackPanel></ScrollViewer></TabItem><TabItem Header="STORICO RETE"><DockPanel Margin="9">
 <Border DockPanel.Dock="Top" Background="#14283B" CornerRadius="8" Padding="14" Margin="0,0,0,8"><StackPanel><TextBlock Text="SPEED LAB / CRONOLOGIA" FontSize="23" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="SpeedHistoryCount" Text="0 test salvati" Foreground="#AFC9DF" Margin="0,5"/><TextBlock Name="SpeedHistoryCompare" Text="--" TextWrapping="Wrap" Foreground="#73E6AE"/><TextBlock Text="Confronto tra gli ultimi due test completi; la configurazione rilevata non dimostra un miglioramento causato dai tweak. I risultati parziali restano separati." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,4"/><WrapPanel><Button Name="SpeedHistoryBack" Content="TORNA A SPEED LAB"/><Button Name="SpeedHistoryRefresh" Content="AGGIORNA"/></WrapPanel></StackPanel></Border>
 <DataGrid Name="SpeedHistoryGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" EnableRowVirtualization="True"><DataGrid.Columns>
-<DataGridTextColumn Header="Data / ora" Binding="{Binding LocalDate}" Width="155"/><DataGridTextColumn Header="Down Mbps" Binding="{Binding Down}" Width="90"/><DataGridTextColumn Header="Up Mbps" Binding="{Binding Up}" Width="85"/><DataGridTextColumn Header="Ping ms" Binding="{Binding Ping}" Width="75"/><DataGridTextColumn Header="Jitter ms" Binding="{Binding Jitter}" Width="75"/><DataGridTextColumn Header="Loss %" Binding="{Binding Loss}" Width="65"/><DataGridTextColumn Header="Durata s" Binding="{Binding Seconds}" Width="75"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" Width="130"/><DataGridTextColumn Header="Config." Binding="{Binding NetworkConfig}" Width="110"/>
+<DataGridTextColumn Header="Data / ora" Binding="{Binding LocalDate}" Width="155"/><DataGridTextColumn Header="Down Mbps" Binding="{Binding Down}" Width="90"/><DataGridTextColumn Header="Up Mbps" Binding="{Binding Up}" Width="85"/><DataGridTextColumn Header="Ping ms" Binding="{Binding Ping}" Width="75"/><DataGridTextColumn Header="Jitter ms" Binding="{Binding Jitter}" Width="75"/><DataGridTextColumn Header="Loss %" Binding="{Binding Loss}" Width="65"/><DataGridTextColumn Header="Durata s" Binding="{Binding Seconds}" Width="75"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" Width="130"/><DataGridTextColumn Header="Ping down ms" Binding="{Binding DownLoadedPing}" Width="95"/><DataGridTextColumn Header="Ping up ms" Binding="{Binding UpLoadedPing}" Width="90"/><DataGridTextColumn Header="Metodo" Binding="{Binding Method}" Width="175"/><DataGridTextColumn Header="Config." Binding="{Binding NetworkConfig}" Width="110"/>
 </DataGrid.Columns></DataGrid></DockPanel></TabItem></TabControl></Grid>
 <Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="6" Margin="0,6,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
 </Grid></Window>
@@ -1344,59 +1347,140 @@ function RestoreNetwork{ if($script:netJob){throw "Attendi la fine dello speed t
  RefreshNetwork
  $status.Text='Ripristino rete verificato; riavvio manuale necessario.'
 }
-function MeasureConnection([hashtable]$state,[int]$phaseSeconds=12){
+function MeasureConnection([hashtable]$state,[int]$phaseSeconds=14){
  $ErrorActionPreference='Stop'
- $totalWatch=[Diagnostics.Stopwatch]::StartNew()
+ $state.Method='Cloudflare-HTTPS-2stream-14s-v2'
+ $total=[Diagnostics.Stopwatch]::StartNew()
  $cancel=$state.CancelSource;if(!$cancel){$cancel=New-Object Threading.CancellationTokenSource};$token=$cancel.Token
  $state.Stage='LATENZA';$state.Progress=0
  $samples=@();$lost=0;$ping=New-Object Net.NetworkInformation.Ping
- try{for($i=0;$i -lt 10;$i++){$token.ThrowIfCancellationRequested();try{$r=$ping.Send('1.1.1.1',700);if($r.Status -eq 'Success'){$samples+=[double]$r.RoundtripTime}else{$lost++}}catch{$lost++};$state.Samples=@($samples);$state.Progress=($i+1)*1.5;Start-Sleep -Milliseconds 200}}finally{$ping.Dispose()}
+ try{
+  for($i=0;$i -lt 10;$i++){
+   $token.ThrowIfCancellationRequested()
+   try{$r=$ping.Send('1.1.1.1',700);if($r.Status -eq 'Success'){$samples+=[double]$r.RoundtripTime}else{$lost++}}catch{$lost++}
+   $state.Samples=@($samples);$state.Progress=($i+1)*1.5
+   Start-Sleep -Milliseconds 200
+  }
+ }finally{$ping.Dispose()}
  $state.Loss=$lost*10
  if($samples.Count){$state.Ping=[math]::Round(($samples|Measure-Object -Average).Average,1)}
  if($samples.Count -ge 2){$delta=@(for($i=1;$i -lt $samples.Count;$i++){[math]::Abs($samples[$i]-$samples[$i-1])});$state.Jitter=[math]::Round(($delta|Measure-Object -Average).Average,1)}
  Add-Type -AssemblyName System.Net.Http
- $client=New-Object Net.Http.HttpClient;$client.Timeout=[TimeSpan]::FromSeconds(25)
- $rng=[Security.Cryptography.RandomNumberGenerator]::Create()
+ if(!('BrabusSpeedPhaseV2' -as [type])){
+ $source=@"
+using System;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.IO;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Security.Cryptography;
+public sealed class BrabusSpeedPhaseV2 {
+ long count, reserved; int requests, failed; string error;
+ readonly long cap; readonly bool down; readonly int seconds;
+ public readonly Stopwatch Clock = new Stopwatch();
+ public long Bytes { get { return Interlocked.Read(ref count); } }
+ public int Requests { get { return Volatile.Read(ref requests); } }
+ public bool Limited { get { return Interlocked.Read(ref reserved) >= cap; } }
+ public string Error { get { return error; } }
+ public BrabusSpeedPhaseV2(bool download, long limit, int duration){down=download;cap=limit;seconds=duration;}
+ public async Task Run(CancellationToken external){
+  using(var cts=CancellationTokenSource.CreateLinkedTokenSource(external)){
+   Clock.Start();cts.CancelAfter(seconds*1000);
+   try{await Task.WhenAll(Worker(cts),Worker(cts)).ConfigureAwait(false);}
+   finally{Clock.Stop();}
+   external.ThrowIfCancellationRequested();
+  }
+ }
+ async Task Worker(CancellationTokenSource cts){
+  var ct=cts.Token;
+  try{
+   using(var handler=new HttpClientHandler{AllowAutoRedirect=false,AutomaticDecompression=DecompressionMethods.None})
+   using(var client=new HttpClient(handler)){
+    client.Timeout=Timeout.InfiniteTimeSpan;
+    client.DefaultRequestHeaders.CacheControl=new CacheControlHeaderValue{NoCache=true,NoStore=true};
+    byte[] payload=null;byte[] buffer=new byte[65536];
+    if(!down){payload=new byte[5000000];using(var rng=RandomNumberGenerator.Create()){rng.GetBytes(payload);}}
+    int size=down?25000000:5000000;
+    while(!ct.IsCancellationRequested){
+     long old=Interlocked.Read(ref reserved);
+     if(old+size>cap)break;
+     if(Interlocked.CompareExchange(ref reserved,old+size,old)!=old)continue;
+     if(down){
+      using(var response=await client.GetAsync("https://speed.cloudflare.com/__down?bytes="+size,HttpCompletionOption.ResponseHeadersRead,ct).ConfigureAwait(false)){
+       response.EnsureSuccessStatusCode();
+       using(var stream=await response.Content.ReadAsStreamAsync().ConfigureAwait(false)){
+        long n=0;int read;
+        while((read=await stream.ReadAsync(buffer,0,buffer.Length,ct).ConfigureAwait(false))>0){
+         n+=read;if(n>size)throw new IOException("Response too large");
+         Interlocked.Add(ref count,read);
+        }
+        if(n!=size)throw new IOException("Incomplete response");
+       }
+      }
+     }else{
+      using(var content=new ByteArrayContent(payload))
+      using(var response=await client.PostAsync("https://speed.cloudflare.com/__up",content,ct).ConfigureAwait(false)){
+       response.EnsureSuccessStatusCode();Interlocked.Add(ref count,size);
+      }
+     }
+     Interlocked.Increment(ref requests);
+    }
+   }
+  }catch(Exception ex){
+   if(!ct.IsCancellationRequested && Interlocked.CompareExchange(ref failed,1,0)==0){error=ex.Message;cts.Cancel();}
+  }
+ }
+}
+"@
+ Add-Type -TypeDefinition $source -ReferencedAssemblies @('System.dll','System.Core.dll','System.Net.Http.dll')
+ }
+ # .NET Framework defaults can limit per-origin concurrency. Scoped to this worker process.
+ $oldLimit=[Net.ServicePointManager]::DefaultConnectionLimit
+ [Net.ServicePointManager]::DefaultConnectionLimit=[math]::Max(4,$oldLimit)
  try{
   foreach($mode in @('Down','Up')){
    $token.ThrowIfCancellationRequested()
-   $isDown=$mode -eq 'Down';$label=if($isDown){'DOWNLOAD'}else{'UPLOAD'}
-   $limit=if($isDown){1000000000L}else{300000000L};$maxChunk=if($isDown){25000000}else{10000000}
-   $chunk=1000000;$base=if($isDown){15}else{57.5}
-   $phase=[Diagnostics.Stopwatch]::StartNew();$sum=0L;$measured=0.0;$requests=0
-   $ct=[Threading.CancellationTokenSource]::CreateLinkedTokenSource($token);$ct.CancelAfter($phaseSeconds*1000)
+   $down=$mode -eq 'Down';$label=if($down){'DOWNLOAD'}else{'UPLOAD'}
+   $cap=if($down){1000000000L}else{300000000L}
+   $base=if($down){15}else{57.5}
+   $phase=New-Object BrabusSpeedPhaseV2($down,$cap,$phaseSeconds)
+   $task=$phase.Run($token)
+   $loaded=@();$lostLoaded=0;$attempts=0;$p=New-Object Net.NetworkInformation.Ping
+   $nextPing=0.5
    try{
-    while($phase.Elapsed.TotalSeconds -lt $phaseSeconds -and $sum -lt $limit){
-     $remaining=$limit-$sum;if($remaining -lt $chunk){$state.Limited=$true;break};$sw=[Diagnostics.Stopwatch]::StartNew()
-     $state.Stage="$label | $([math]::Round($phase.Elapsed.TotalSeconds,1)) / $phaseSeconds s"
-     try{
-      if($isDown){
-       $url="https://speed.cloudflare.com/__down?bytes=$chunk"
-       $resp=$client.GetAsync($url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$ct.Token).GetAwaiter().GetResult()
-       try{$null=$resp.EnsureSuccessStatusCode();$stream=$resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-        try{$buf=New-Object byte[] 65536;$n=0L;while(($read=$stream.ReadAsync($buf,0,$buf.Length,$ct.Token).GetAwaiter().GetResult()) -gt 0){$n+=$read;if($n -gt $chunk){throw 'Risposta oltre limite'};$state.Progress=[math]::Min($base+42.5,$base+42.5*$phase.Elapsed.TotalSeconds/$phaseSeconds);$state.Stage="$label | $([math]::Round($phase.Elapsed.TotalSeconds,1)) / $phaseSeconds s"} }finally{$stream.Dispose()}
-        if($n -ne $chunk){throw 'Download incompleto'}
-       }finally{$resp.Dispose()}
-      }else{
-       $bytes=New-Object byte[] $chunk;$rng.GetBytes($bytes);$content=New-Object Net.Http.ByteArrayContent -ArgumentList (,$bytes)
-       try{$resp=$client.PostAsync('https://speed.cloudflare.com/__up',$content,$ct.Token).GetAwaiter().GetResult();try{$null=$resp.EnsureSuccessStatusCode()}finally{$resp.Dispose()}}finally{$content.Dispose()}
-      }
-     }catch{if($ct.IsCancellationRequested -and !$token.IsCancellationRequested){break};$token.ThrowIfCancellationRequested();$state.Error=$_.Exception.Message;break}
-     $sw.Stop();$sum+=$chunk;$measured=$phase.Elapsed.TotalSeconds;$requests++
-     $state[$mode]=[math]::Round($sum*8/1e6/[math]::Max(.001,$measured),2)
-     $state.Progress=[math]::Min($base+42.5,$base+42.5*$measured/$phaseSeconds)
-     $desired=$chunk/[math]::Max(.05,$sw.Elapsed.TotalSeconds);$chunk=if($desired -ge 15000000 -and $isDown){25000000}elseif($desired -ge 4000000){10000000}elseif($desired -ge 400000){1000000}else{100000}
+    while(!$task.IsCompleted){
+     $token.ThrowIfCancellationRequested()
+     $elapsed=$phase.Clock.Elapsed.TotalSeconds
+     if($elapsed -ge $nextPing){
+      $attempts++
+      try{$r=$p.Send('1.1.1.1',400);if($r.Status -eq 'Success'){$loaded+=[double]$r.RoundtripTime}else{$lostLoaded++}}catch{$lostLoaded++}
+      $nextPing=$phase.Clock.Elapsed.TotalSeconds+0.5
+      if($loaded.Count){$state[$mode+'LoadedPing']=[math]::Round(($loaded|Measure-Object -Average).Average,1)}
+     }
+     $elapsed=$phase.Clock.Elapsed.TotalSeconds
+     if($elapsed -gt 0.5 -and $phase.Bytes -gt 0){$state[$mode]=[math]::Round($phase.Bytes*8/1e6/$elapsed,2)}
+     $state.Stage="$label | $([math]::Round($elapsed,1)) / $phaseSeconds s"
+     $state.Progress=[math]::Min($base+42.5,$base+42.5*$elapsed/$phaseSeconds)
+     Start-Sleep -Milliseconds 150
     }
-   }finally{$ct.Dispose()}
-   $token.ThrowIfCancellationRequested()
-   $state[$mode+'Bytes']=$sum;$state[$mode+'Seconds']=[math]::Round($measured,2);$state[$mode+'Requests']=$requests
-   if($sum -ge $limit){$state.Limited=$true};if($state.Error){break}
+    $task.GetAwaiter().GetResult()
+   }finally{$p.Dispose()}
+   $elapsed=$phase.Clock.Elapsed.TotalSeconds
+   if($phase.Bytes -gt 0){$state[$mode]=[math]::Round($phase.Bytes*8/1e6/[math]::Max(.001,$elapsed),2)}
+   $state[$mode+'Bytes']=$phase.Bytes;$state[$mode+'Seconds']=[math]::Round($elapsed,2);$state[$mode+'Requests']=$phase.Requests
+   $state[$mode+'LoadedSamples']=$loaded.Count
+   if($phase.Limited -and $elapsed -lt ($phaseSeconds-0.5)){$state.Limited=$true}
+   if($phase.Error){$state.Error=$phase.Error;break}
   }
-  $state.Elapsed=[math]::Round($totalWatch.Elapsed.TotalSeconds,1)
-  $state.Stage=if($state.Error){"PARZIALE | server non disponibile: $($state.Error)"}elseif($state.Limited){"COMPLETATO | $($state.Elapsed) s | limite dati"}elseif(!$state.Down -or !$state.Up){"PARZIALE | $($state.Elapsed) s"}else{"COMPLETATO | $($state.Elapsed) s"}
+  $state.Elapsed=[math]::Round($total.Elapsed.TotalSeconds,1)
+  $state.Stage=if($state.Error){"PARZIALE | server: $($state.Error)"}elseif($state.Limited){"COMPLETATO | $($state.Elapsed) s | limite dati"}elseif(!$state.Down -or !$state.Up -or $state.DownSeconds -lt ($phaseSeconds-1) -or $state.UpSeconds -lt ($phaseSeconds-1)){"PARZIALE | $($state.Elapsed) s"}else{"COMPLETATO | $($state.Elapsed) s"}
   $state.Progress=100
- }finally{$rng.Dispose();$client.Dispose()}
+ }finally{[Net.ServicePointManager]::DefaultConnectionLimit=$oldLimit}
 }
+
 $script:speedHistoryPath=Join-Path $root 'speed-history.json'
 function ReadSpeedHistory{
  if(!(Test-Path -LiteralPath $script:speedHistoryPath)){return}
@@ -1410,7 +1494,7 @@ function SaveSpeedResult($s){
  $rows=@(ReadSpeedHistory)
  $id=[string]$s.TestId;if(!$id){$id=[guid]::NewGuid().ToString('N')}
  if($id -in @($rows.Id)){return}
- $r=[pscustomobject]@{Id=$id;Date=(Get-Date).ToString('o');Method='Cloudflare-HTTPS-12s-v1';Status=if($s.Stage -like 'COMPLETATO*' -and !$s.Limited -and $s.Down -gt 0 -and $s.Up -gt 0){'Completo'}else{'Parziale / limite'};Down=$s.Down;Up=$s.Up;Ping=$s.Ping;Jitter=$s.Jitter;Loss=$s.Loss;Seconds=$s.Elapsed;DownMB=[math]::Round([double]$s.DownBytes/1e6,1);UpMB=[math]::Round([double]$s.UpBytes/1e6,1);NetworkConfig=$s.NetworkConfig}
+ $r=[pscustomobject]@{Id=$id;Date=(Get-Date).ToString('o');Method=$(if($s.Method){$s.Method}else{'Cloudflare-HTTPS-12s-v1'});Status=if($s.Stage -like 'COMPLETATO*' -and !$s.Limited -and $s.Down -gt 0 -and $s.Up -gt 0){'Completo'}else{'Parziale / limite'};Down=$s.Down;Up=$s.Up;Ping=$s.Ping;Jitter=$s.Jitter;Loss=$s.Loss;DownLoadedPing=$s.DownLoadedPing;UpLoadedPing=$s.UpLoadedPing;Seconds=$s.Elapsed;DownMB=[math]::Round([double]$s.DownBytes/1e6,1);UpMB=[math]::Round([double]$s.UpBytes/1e6,1);NetworkConfig=$s.NetworkConfig}
  Atomic $script:speedHistoryPath @{Format='BrabusSpeedHistory';Version=1;Results=@(@($r)+$rows|Select-Object -First 1000)}
 }
 function GetNetworkFingerprint{
@@ -1428,7 +1512,7 @@ function RefreshSpeedHistory{
   $r
  })
  $w.FindName('SpeedHistoryCount').Text="$($rows.Count) test salvati | ultimi 1000"
- $complete=@($rows|Where-Object {$_.Status -eq 'Completo' -and $_.Method -eq 'Cloudflare-HTTPS-12s-v1'})
+ $latest=@($rows|Where-Object Status -eq 'Completo'|Select-Object -First 1);$complete=@($rows|Where-Object {$_.Status -eq 'Completo' -and $latest.Count -and $_.Method -eq $latest[0].Method})
  $w.FindName('SpeedHistoryCompare').Text='Servono due test completi comparabili.'
  if($complete.Count -ge 2){
   $a=$complete[0];$b=$complete[1]
@@ -1440,7 +1524,7 @@ function RefreshSpeedHistory{
 }
 $script:netJob=$null;$script:netState=$null
 function RenderNetworkTest($s){
- foreach($pair in @(@('NetDown','Down'),@('NetUp','Up'),@('NetPing','Ping'),@('NetJitter','Jitter'),@('NetLoss','Loss'))){
+ foreach($pair in @(@('NetDown','Down'),@('NetUp','Up'),@('NetPing','Ping'),@('NetJitter','Jitter'),@('NetLoss','Loss'),@('NetDownLoaded','DownLoadedPing'),@('NetUpLoaded','UpLoadedPing'))){
   $v=$s[$pair[1]];$w.FindName($pair[0]).Text=if($null -ne $v){[string]$v}else{'--'}
  }
  $w.FindName('NetProgress').Value=[double]$s.Progress
@@ -1459,7 +1543,7 @@ function StopNetworkTest {
 }
 function StartNetworkTest {
  if($script:netJob){return}
- if(!(ConfirmDark 'Speed test Internet' 'Test verso Cloudflare: circa 26-35 secondi; fino a 1 GB download + 300 MB upload e overhead. Il limite dati puo abbreviare la misurazione. Singola connessione HTTPS, ping ICMP a 1.1.1.1. Il servizio vede IP e richieste. Evita su connessioni a consumo. Avviare?')){return}
+ if(!(ConfirmDark 'Speed test Internet' 'Test avanzato Cloudflare: circa 30-37 secondi; due flussi paralleli, 14 secondi per direzione, ping a riposo e sotto carico. Fino a 1 GB download + 300 MB upload e overhead; limite dati o errori possono abbreviare il test. Il servizio vede IP e richieste. Evita su connessioni a consumo. Avviare?')){return}
  $script:netState=[hashtable]::Synchronized(@{CancelSource=(New-Object Threading.CancellationTokenSource);Stage='AVVIO';TestId=([guid]::NewGuid().ToString('N'));NetworkConfig=(GetNetworkFingerprint);Progress=0;Samples=@();Down=$null;Up=$null;Ping=$null;Jitter=$null;Loss=$null})
  RenderNetworkTest $script:netState
  $ps=[powershell]::Create()
@@ -1613,9 +1697,9 @@ if($UiTest){
  }
  $w.FindName('Network').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
  if($w.FindName('Tabs').SelectedIndex -ne 4 -or $status.Text -like 'ERRORE:*'){throw "Network page failed: $($status.Text)"}
- $mock=@{Stage='TEST';Progress=100;Samples=@(10,13,12,15);Down=100.5;Up=20;Ping=12.5;Jitter=2;Loss=0}
+ $mock=@{Stage='TEST';Progress=100;Samples=@(10,13,12,15);Down=100.5;Up=20;Ping=12.5;Jitter=2;Loss=0;DownLoadedPing=45;UpLoadedPing=60}
  RenderNetworkTest $mock
- if($w.FindName('NetDown').Text -ne '100.5' -or $w.FindName('NetTrace').Points.Count -ne 4){throw 'Network HUD render failed'}
+ if($w.FindName('NetDown').Text -ne '100.5' -or $w.FindName('NetTrace').Points.Count -ne 4 -or $w.FindName('NetDownLoaded').Text -ne '45' -or $w.FindName('NetUpLoaded').Text -ne '60'){throw 'Network HUD render failed'}
  $realNetRows=$script:netRows
  $script:netRows=@(
   [pscustomobject]@{Name='Available1';Selected=$false;CanSelect=$true;Status='DISPONIBILE'},
