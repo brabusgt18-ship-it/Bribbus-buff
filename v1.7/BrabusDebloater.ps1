@@ -737,8 +737,8 @@ function RawCatalog{
  $allow=@('Discord','Steam','Spotify','EpicGamesLauncher','Epic Games Launcher','Battle.net','EADM','electron.app.CurseForge','WallpaperEngine','Opera Stable','RiotClient','electron.app.BlueStacks Services')
  foreach($name in $allow){
   $old=ReadValue $run $name
-  if($old.Exists -and $old.Kind -in @('String','ExpandString')){
-   [pscustomobject]@{Name="Avvio: $name";Category='Startup';Path=$run;Key=$name;TargetState=[pscustomobject]@{Exists=$false;Kind='';Value=$null};Before='Attivo in Run';After='Rimosso da Run';Status='DISPONIBILE';Level='OptIn';Note='App resta installata; non chiude processi; avvio automatico da altre fonti possibile';Selected=$false}
+  $managed=$false;try{$managed=@(ReadJournal|Where-Object {$_.Path -eq $run -and $_.Key -eq $name -and !$_.Target.Exists}).Count -gt 0}catch{};if(($old.Exists -and $old.Kind -in @('String','ExpandString')) -or (!$old.Exists -and $managed)){
+   [pscustomobject]@{Name="Avvio: $name";Category='Startup';Path=$run;Key=$name;TargetState=[pscustomobject]@{Exists=$false;Kind='';Value=$null};Before=$(if($old.Exists){'Attivo in Run'}else{'Assente in Run'});After='Rimosso da Run';Status=$(if($old.Exists){'DISPONIBILE'}else{'GIA CONFIGURATO'});Level='OptIn';Note='App resta installata; non chiude processi; avvio automatico da altre fonti possibile';Selected=$false}
   }
  }
 }
@@ -772,6 +772,30 @@ function Catalog{
   $r|Add-Member NoteProperty PWURank $p.Rank -Force
   $r|Add-Member NoteProperty PWUReason $p.Reason -Force
   $r
+ }
+}
+function VerificationLabel($r,$records,[bool]$valid=$true,$boot=$null){
+ if(!$valid){return 'BACKUP NON VALIDO'}
+ $record=@($records|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}|Select-Object -First 1)
+ if(!$record.Count){if($r.Status -eq 'GIA CONFIGURATO'){return 'GIA CONFIGURATO'};return $r.Status}
+ try{$actual=ReadValue $r.Path $r.Key
+  if(!(Same $actual $record[0].Target)){return 'NON VERIFICATO'}
+  if(!(Same $actual $r.TargetState)){return 'TARGET CAMBIATO'}
+  if($r.Path.StartsWith('NET|')){
+   if($boot -and ([datetimeoffset]$boot).UtcDateTime -gt ([datetimeoffset]::Parse($record[0].Time)).UtcDateTime){return 'VERIFICATO DOPO RIAVVIO'}
+   return 'SALVATO / RIAVVIO PC'
+  }
+  if($r.Category -eq 'Browser' -or $r.Path -match '^Software\\Policies\\(Microsoft\\Edge|Google\\Chrome)'){return 'SALVATO / RIAVVIA APP'}
+  if($r.Path.StartsWith('POWER|')){return 'ATTIVO / VERIFICATO'}
+  return 'CONFIGURATO / VERIFICATO'
+ }catch{return 'ERRORE VERIFICA'}
+}
+function SetVerificationLabels($rows){
+ $valid=$true;$records=@()
+ try{$records=@(ReadJournal)}catch{$valid=$false}
+ foreach($r in @($rows)){
+  $label=VerificationLabel $r $records $valid
+  $r|Add-Member NoteProperty VerifiedStatus $label -Force
  }
 }
 function Inventory{
@@ -916,7 +940,7 @@ public static class BrabusDwm {
 <TextBlock Text="Protezione Windows intatta" Foreground="#73E6AE" TextWrapping="Wrap" Margin="4,5,0,2" FontSize="11"/>
 </StackPanel></ScrollViewer></Border>
 <TabControl Grid.Column="1" Name="Tabs"><TabItem Header="IMPOSTAZIONI"><DockPanel Margin="6"><Border DockPanel.Dock="Bottom" Background="#17283C" Padding="12" CornerRadius="6" Margin="0,8,0,0"><TextBlock Name="TweakDetail" Text="Seleziona una voce per vedere i dettagli." TextWrapping="Wrap" MinHeight="45"/></Border><StackPanel DockPanel.Dock="Top" Margin="0,0,0,8"><DockPanel><Button DockPanel.Dock="Right" Name="SelectPage" Content="SELEZIONA VISIBILI"/><TextBlock Name="CategoryTitle" Text="IMPOSTAZIONI / Tutte" FontSize="21" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center"/></DockPanel><TextBlock Text="RICERCA / nome, categoria, stato, descrizione o chiave" Foreground="#9EB5CC" FontSize="11"/><TextBox Name="Filter" Margin="0,4,0,5"/>
-<WrapPanel Margin="0,0,0,3"><TextBlock Text="PWU" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center" Margin="0,0,6,0"/><Button Name="PWUAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="PWULow" Content="Low" Padding="8,4" Margin="2"/><Button Name="PWUMedium" Content="Medium" Padding="8,4" Margin="2"/><Button Name="PWUHigh" Content="High" Padding="8,4" Margin="2"/><TextBlock Text="STATO" Foreground="#9EB5CC" VerticalAlignment="Center" Margin="10,0,5,0"/><Button Name="StateAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="StateAvailable" Content="Disponibili" Padding="8,4" Margin="2"/><Button Name="StateDone" Content="Configurati" Padding="8,4" Margin="2"/><Button Name="StateSelected" Content="Selezionati" Padding="8,4" Margin="2"/><Button Name="ResetFilters" Content="RESET" Padding="8,4" Margin="2"/></WrapPanel><DockPanel><TextBlock Name="FilterCount" Foreground="#AFC9DF" VerticalAlignment="Center" DockPanel.Dock="Right"/><TextBlock Text="PWU: impatto potenziale, non benchmark. Clicca la colonna per ordinare." Foreground="#9EB5CC" FontSize="11" TextWrapping="Wrap"/></DockPanel></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTemplateColumn Header="PWU" SortMemberPath="PWURank" CanUserSort="True" IsReadOnly="True" Width="78"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="4" Padding="4,2" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding PWUReason}"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#28394C"/><Style.Triggers><DataTrigger Binding="{Binding PWU}" Value="Medium"><Setter Property="Background" Value="#78521D"/></DataTrigger><DataTrigger Binding="{Binding PWU}" Value="High"><Setter Property="Background" Value="#175A46"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding PWU}" FontWeight="SemiBold" FontSize="11" Foreground="#F2F6FC"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="2*" MinWidth="155"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" IsReadOnly="True" Width="115"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="3*" MinWidth="115"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CONTROL CENTER"><DockPanel Margin="8">
+<WrapPanel Margin="0,0,0,3"><TextBlock Text="PWU" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center" Margin="0,0,6,0"/><Button Name="PWUAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="PWULow" Content="Low" Padding="8,4" Margin="2"/><Button Name="PWUMedium" Content="Medium" Padding="8,4" Margin="2"/><Button Name="PWUHigh" Content="High" Padding="8,4" Margin="2"/><TextBlock Text="STATO" Foreground="#9EB5CC" VerticalAlignment="Center" Margin="10,0,5,0"/><Button Name="StateAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="StateAvailable" Content="Disponibili" Padding="8,4" Margin="2"/><Button Name="StateDone" Content="Configurati" Padding="8,4" Margin="2"/><Button Name="StateSelected" Content="Selezionati" Padding="8,4" Margin="2"/><Button Name="ResetFilters" Content="RESET" Padding="8,4" Margin="2"/></WrapPanel><DockPanel><TextBlock Name="FilterCount" Foreground="#AFC9DF" VerticalAlignment="Center" DockPanel.Dock="Right"/><TextBlock Text="PWU: impatto potenziale, non benchmark. Clicca la colonna per ordinare." Foreground="#9EB5CC" FontSize="11" TextWrapping="Wrap"/></DockPanel></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTemplateColumn Header="PWU" SortMemberPath="PWURank" CanUserSort="True" IsReadOnly="True" Width="78"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="4" Padding="4,2" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding PWUReason}"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#28394C"/><Style.Triggers><DataTrigger Binding="{Binding PWU}" Value="Medium"><Setter Property="Background" Value="#78521D"/></DataTrigger><DataTrigger Binding="{Binding PWU}" Value="High"><Setter Property="Background" Value="#175A46"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding PWU}" FontWeight="SemiBold" FontSize="11" Foreground="#F2F6FC"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="2*" MinWidth="155"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Stato" Binding="{Binding VerifiedStatus}" IsReadOnly="True" Width="175"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="3*" MinWidth="115"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CONTROL CENTER"><DockPanel Margin="8">
 <Border DockPanel.Dock="Top" Background="#14283B" Padding="16" CornerRadius="8" Margin="0,0,0,10"><StackPanel>
 <TextBlock Name="PageTitle" Text="CONTROL CENTER" FontSize="26" FontWeight="Bold" Foreground="#43D7E8"/>
 <TextBlock Name="PageHint" Text="Apri uno strumento dal menu a sinistra." Foreground="#AFC9DF" TextWrapping="Wrap" Margin="0,6,0,8"/>
@@ -940,12 +964,16 @@ public static class BrabusDwm {
 <Border Background="#12263A" CornerRadius="8" Padding="10" Margin="3,0"><StackPanel><TextBlock Text="JITTER / ms" FontSize="11"/><TextBlock Name="NetJitter" Text="--" FontSize="26" Foreground="#F4C77B" FontWeight="Bold"/></StackPanel></Border>
 <Border Background="#12263A" CornerRadius="8" Padding="10" Margin="3,0,0,0"><StackPanel><TextBlock Text="LOSS / %" FontSize="11"/><TextBlock Name="NetLoss" Text="--" FontSize="26" Foreground="#A9C9FA" FontWeight="Bold"/></StackPanel></Border>
 </UniformGrid>
-<Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
+<Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetHistory" Content="CRONOLOGIA TEST"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
 <Border Background="#14283B" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><TextBlock Text="DNS ATTUALI / INTERFACCE" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="NetInfo" Text="--" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Border>
 <TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Spunta le voci o usa Seleziona tutto. Driver: admin e riavvio manuale; browser: backup originale. Voci gia configurate o con backup attivo escluse." TextWrapping="Wrap" Foreground="#AFC9DF"/>
-<DataGrid Name="NetGrid" IsReadOnly="False" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsEnabled="{Binding CanSelect}" IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding SelectionHint}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" IsReadOnly="True" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid>
+<DataGrid Name="NetGrid" IsReadOnly="False" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsEnabled="{Binding CanSelect}" IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding SelectionHint}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" IsReadOnly="True" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding VerifiedStatus}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid>
 <TextBlock Name="NetDetail" Text="Seleziona una voce per dettagli." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,5"/><WrapPanel><Button Name="NetSelectAll" Content="SELEZIONA TUTTO"/><Button Name="NetClear" Content="DESELEZIONA TUTTO"/><Button Name="NetApply" Content="APPLICA SELEZIONATI" Background="#0C7189"/><TextBlock Name="NetSelectedCount" Text="0 selezionati" VerticalAlignment="Center" Margin="6,0"/><Button Name="NetRestore" Content="RIPRISTINA DRIVER" IsEnabled="False"/><TextBlock Name="NetBackupCount" Text="Backup rete: --" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
-</StackPanel></ScrollViewer></TabItem></TabControl></Grid>
+</StackPanel></ScrollViewer></TabItem><TabItem Header="STORICO RETE"><DockPanel Margin="9">
+<Border DockPanel.Dock="Top" Background="#14283B" CornerRadius="8" Padding="14" Margin="0,0,0,8"><StackPanel><TextBlock Text="SPEED LAB / CRONOLOGIA" FontSize="23" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="SpeedHistoryCount" Text="0 test salvati" Foreground="#AFC9DF" Margin="0,5"/><TextBlock Name="SpeedHistoryCompare" Text="--" TextWrapping="Wrap" Foreground="#73E6AE"/><TextBlock Text="Confronto tra gli ultimi due test completi; la configurazione rilevata non dimostra un miglioramento causato dai tweak. I risultati parziali restano separati." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,4"/><WrapPanel><Button Name="SpeedHistoryBack" Content="TORNA A SPEED LAB"/><Button Name="SpeedHistoryRefresh" Content="AGGIORNA"/></WrapPanel></StackPanel></Border>
+<DataGrid Name="SpeedHistoryGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" EnableRowVirtualization="True"><DataGrid.Columns>
+<DataGridTextColumn Header="Data / ora" Binding="{Binding LocalDate}" Width="155"/><DataGridTextColumn Header="Down Mbps" Binding="{Binding Down}" Width="90"/><DataGridTextColumn Header="Up Mbps" Binding="{Binding Up}" Width="85"/><DataGridTextColumn Header="Ping ms" Binding="{Binding Ping}" Width="75"/><DataGridTextColumn Header="Jitter ms" Binding="{Binding Jitter}" Width="75"/><DataGridTextColumn Header="Loss %" Binding="{Binding Loss}" Width="65"/><DataGridTextColumn Header="Durata s" Binding="{Binding Seconds}" Width="75"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" Width="130"/><DataGridTextColumn Header="Config." Binding="{Binding NetworkConfig}" Width="110"/>
+</DataGrid.Columns></DataGrid></DockPanel></TabItem></TabControl></Grid>
 <Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="6" Margin="0,6,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
 </Grid></Window>
 '@
@@ -1022,7 +1050,7 @@ function FilterRows{
   if($script:stateFilter -eq 'Available' -and $r.Status -ne 'DISPONIBILE'){return $false}
   if($script:stateFilter -eq 'Done' -and $r.Status -ne 'GIA CONFIGURATO'){return $false}
   if($script:stateFilter -eq 'Selected' -and !$r.Selected){return $false}
-  $hay="$($r.Name) $($r.Category) $($r.Status) $($r.Note) $($r.Key) $($r.PWU) $($r.PWUReason)"
+  $hay="$($r.Name) $($r.Category) $($r.VerifiedStatus) $($r.Status) $($r.Note) $($r.Key) $($r.PWU) $($r.PWUReason)"
   foreach($term in $terms){if($hay.IndexOf($term,[StringComparison]::OrdinalIgnoreCase) -lt 0){return $false}}
   return $true
  })
@@ -1030,7 +1058,7 @@ function FilterRows{
  $w.FindName('FilterCount').Text="$($visible.Count) / $($script:rows.Count) visibili"
 }
 function UpdateLog{if(Test-Path $log){$w.FindName('History').Text=(Get-Content $log -Tail 200)-join [Environment]::NewLine}}
-function RefreshRows{$script:rows=@(Catalog);$cl=$w.FindName("CategoryList");$cl.ItemsSource=@("Tutte")+@($script:rows.Category|Sort-Object -Unique);if($script:category -notin $cl.ItemsSource){$script:category="Tutte"};$cl.SelectedItem=$script:category;FilterRows;UpdateDashboard;UpdateLog}
+function RefreshRows{$script:rows=@(Catalog);SetVerificationLabels $script:rows;$cl=$w.FindName("CategoryList");$cl.ItemsSource=@("Tutte")+@($script:rows.Category|Sort-Object -Unique);if($script:category -notin $cl.ItemsSource){$script:category="Tutte"};$cl.SelectedItem=$script:category;FilterRows;UpdateDashboard;UpdateLog}
 function Guard($a){try{& $a}catch{$status.Text='ERRORE: '+$_.Exception.Message;UpdateLog}}
 function ProfileId($row){if($row.Path.StartsWith("POWER|")){"POWER|$($row.Path.Split("|")[2])|$($row.Key)"}else{"$($row.Path)|$($row.Key)"}}
 function ExportProfile{
@@ -1164,7 +1192,7 @@ $w.FindName('PageAction').Add_Click({Guard {InvokePageAction}})
 $w.FindName('PageRefresh').Add_Click({Guard {if($script:page){OpenPage $script:page}}})
 $w.FindName('PageCategory').Add_Click({ShowCategory ([string]$w.FindName('PageCategory').Tag)})
 $w.FindName('CategoryList').Add_SelectionChanged({$c=$w.FindName('CategoryList').SelectedItem;if($c){ShowCategory ([string]$c)}})
-$w.FindName('Grid').Add_SelectionChanged({$r=$grid.SelectedItem;if($r){$w.FindName('TweakDetail').Text="$($r.Name) | $($r.Status) | $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note+[Environment]::NewLine+"PWU $($r.PWU): $($r.PWUReason)"}})
+$w.FindName('Grid').Add_SelectionChanged({$r=$grid.SelectedItem;if($r){$w.FindName('TweakDetail').Text="$($r.Name) | $($r.VerifiedStatus) | $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note+[Environment]::NewLine+"PWU $($r.PWU): $($r.PWUReason)"}})
 $w.FindName('SelectPage').Add_Click({Guard {
  $pending=@(ReadJournal);$count=0
  foreach($r in @($grid.ItemsSource)){if($r.Status -eq 'DISPONIBILE' -and !@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count){$r.Selected=$true;$count++}}
@@ -1269,13 +1297,13 @@ function RefreshNetwork {
  $netPending=@();$userPending=@();$netValid=$true;$userValid=$true
  try{$netPending=@(GetNetworkBackup)}catch{$netValid=$false}
  try{$userPending=@(ReadJournal)}catch{$userValid=$false}
- $script:netRows=@(foreach($item in (@(NetworkCatalog)+@(GetNetworkRelated))){
+ $boot=$null;try{$boot=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime}catch{};$script:netRows=@(foreach($item in (@(NetworkCatalog)+@(GetNetworkRelated))){
   $r=$item.PSObject.Copy();$driver=$r.Path.StartsWith('NET|')
   $pending=if($driver){$netPending}else{$userPending};$valid=if($driver){$netValid}else{$userValid}
   $already=@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count -gt 0
   $can=$valid -and !$already -and $r.Status -eq 'DISPONIBILE'
   $hint=if(!$valid){'Backup non valido'}elseif($already){'Backup attivo: ripristina prima'}elseif(!$can){'Gia configurato'}elseif($driver){'Richiede admin per applicare'}else{'Disponibile'}
-  $r|Add-Member NoteProperty Selected $false -Force
+  $r|Add-Member NoteProperty VerifiedStatus (VerificationLabel $r $pending $valid $boot) -Force; $r|Add-Member NoteProperty Selected $false -Force
   $r|Add-Member NoteProperty CanSelect $can -Force
   $r|Add-Member NoteProperty SelectionHint $hint -Force
   $r
@@ -1293,7 +1321,7 @@ function SelectNetworkAll([bool]$value){
  foreach($r in @($script:netRows)){$r.Selected=($value -and $r.CanSelect)}
  $w.FindName('NetGrid').Items.Refresh();UpdateNetworkCount
 }
-function ApplyNetworkSelected{
+function ApplyNetworkSelected{ if($script:netJob){throw "Attendi la fine dello speed test prima di applicare tweak."}
  $g=$w.FindName('NetGrid')
  $null=$g.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true)
  $null=$g.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
@@ -1306,9 +1334,9 @@ function ApplyNetworkSelected{
  $ok=0;$fail=0
  foreach($r in $selected){try{if($r.Path.StartsWith('NET|')){WithNetworkJournal {ApplyValue $r}}else{ApplyValue $r};$ok++}catch{$fail++;Event $r.Name '-' '-' ('ERRORE RETE: '+$_.Exception.Message)}}
  RefreshRows;RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4
- $status.Text="Tweak rete verificati: $ok | errori: $fail. Riavvio manuale se necessario."
+ $status.Text="Tweak scritti e riletti: $ok | errori: $fail. Stato nella tabella; driver richiedono riavvio manuale."
 }
-function RestoreNetwork{
+function RestoreNetwork{ if($script:netJob){throw "Attendi la fine dello speed test prima di ripristinare."}
  if(!(IsElevated)){throw 'Ripristino driver: avvia PowerShell come amministratore'}
  $records=@(GetNetworkBackup);if(!$records.Count){return}
  if(!(ConfirmDark 'Ripristino rete' ("Ripristinare tutte le $($records.Count) modifiche driver gestite? Nessun riavvio automatico."))){return}
@@ -1369,6 +1397,47 @@ function MeasureConnection([hashtable]$state,[int]$phaseSeconds=12){
   $state.Progress=100
  }finally{$rng.Dispose();$client.Dispose()}
 }
+$script:speedHistoryPath=Join-Path $root 'speed-history.json'
+function ReadSpeedHistory{
+ if(!(Test-Path -LiteralPath $script:speedHistoryPath)){return}
+ if((Get-Item -LiteralPath $script:speedHistoryPath).Length -gt 10MB){throw 'Cronologia troppo grande: conservata senza modifiche'}
+ $doc=Get-Content -LiteralPath $script:speedHistoryPath -Raw|ConvertFrom-Json
+ if($doc.Format -ne 'BrabusSpeedHistory' -or $doc.Version -ne 1){throw 'Formato cronologia non valido; file conservato'}
+ foreach($r in @($doc.Results)){if($r){$r}}
+}
+function SaveSpeedResult($s){
+ if(!$s.Stage -or $s.Stage -notmatch '^(COMPLETATO|PARZIALE)' -or $null -eq $s.Elapsed){return}
+ $rows=@(ReadSpeedHistory)
+ $id=[string]$s.TestId;if(!$id){$id=[guid]::NewGuid().ToString('N')}
+ if($id -in @($rows.Id)){return}
+ $r=[pscustomobject]@{Id=$id;Date=(Get-Date).ToString('o');Method='Cloudflare-HTTPS-12s-v1';Status=if($s.Stage -like 'COMPLETATO*' -and !$s.Limited -and $s.Down -gt 0 -and $s.Up -gt 0){'Completo'}else{'Parziale / limite'};Down=$s.Down;Up=$s.Up;Ping=$s.Ping;Jitter=$s.Jitter;Loss=$s.Loss;Seconds=$s.Elapsed;DownMB=[math]::Round([double]$s.DownBytes/1e6,1);UpMB=[math]::Round([double]$s.UpBytes/1e6,1);NetworkConfig=$s.NetworkConfig}
+ Atomic $script:speedHistoryPath @{Format='BrabusSpeedHistory';Version=1;Results=@(@($r)+$rows|Select-Object -First 1000)}
+}
+function GetNetworkFingerprint{
+ try{
+  $values=@(foreach($r in (@(NetworkCatalog)+@(GetNetworkRelated))){$v=ReadValue $r.Path $r.Key; "$($r.Path)|$($r.Key)|$($v.Exists)|$($v.Kind)|$($v.Value)"})
+  if(!$values.Count){return 'ND'}
+  (BackupHash (($values|Sort-Object) -join [Environment]::NewLine)).Substring(0,12)
+ }catch{return 'ND'}
+}
+function RefreshSpeedHistory{
+ $rows=@(ReadSpeedHistory)
+ $w.FindName('SpeedHistoryGrid').ItemsSource=@($rows|ForEach-Object {
+  $r=$_.PSObject.Copy()
+  $r|Add-Member NoteProperty LocalDate ([datetimeoffset]::Parse([string]$_.Date).LocalDateTime.ToString('dd/MM/yyyy HH:mm:ss')) -Force
+  $r
+ })
+ $w.FindName('SpeedHistoryCount').Text="$($rows.Count) test salvati | ultimi 1000"
+ $complete=@($rows|Where-Object {$_.Status -eq 'Completo' -and $_.Method -eq 'Cloudflare-HTTPS-12s-v1'})
+ $w.FindName('SpeedHistoryCompare').Text='Servono due test completi comparabili.'
+ if($complete.Count -ge 2){
+  $a=$complete[0];$b=$complete[1]
+  $msg="Ultimo vs precedente completo: download {0:+0.00;-0.00;0.00} Mbps | upload {1:+0.00;-0.00;0.00} Mbps" -f ([double]$a.Down-[double]$b.Down),([double]$a.Up-[double]$b.Up)
+  if($null -ne $a.Ping -and $null -ne $b.Ping){$msg+=(" | ping {0:+0.0;-0.0;0.0} ms" -f ([double]$a.Ping-[double]$b.Ping))}
+  $msg+=if($a.NetworkConfig -eq 'ND' -or $b.NetworkConfig -eq 'ND'){' | configurazione non rilevata'}elseif($a.NetworkConfig -eq $b.NetworkConfig){' | configurazione rilevata invariata'}else{' | configurazione rilevata diversa'}
+  $w.FindName('SpeedHistoryCompare').Text=$msg+' | non dimostra causalita.'
+ }
+}
 $script:netJob=$null;$script:netState=$null
 function RenderNetworkTest($s){
  foreach($pair in @(@('NetDown','Down'),@('NetUp','Up'),@('NetPing','Ping'),@('NetJitter','Jitter'),@('NetLoss','Loss'))){
@@ -1391,7 +1460,7 @@ function StopNetworkTest {
 function StartNetworkTest {
  if($script:netJob){return}
  if(!(ConfirmDark 'Speed test Internet' 'Test verso Cloudflare: circa 26-35 secondi; fino a 1 GB download + 300 MB upload e overhead. Il limite dati puo abbreviare la misurazione. Singola connessione HTTPS, ping ICMP a 1.1.1.1. Il servizio vede IP e richieste. Evita su connessioni a consumo. Avviare?')){return}
- $script:netState=[hashtable]::Synchronized(@{CancelSource=(New-Object Threading.CancellationTokenSource);Stage='AVVIO';Progress=0;Samples=@();Down=$null;Up=$null;Ping=$null;Jitter=$null;Loss=$null})
+ $script:netState=[hashtable]::Synchronized(@{CancelSource=(New-Object Threading.CancellationTokenSource);Stage='AVVIO';TestId=([guid]::NewGuid().ToString('N'));NetworkConfig=(GetNetworkFingerprint);Progress=0;Samples=@();Down=$null;Up=$null;Ping=$null;Jitter=$null;Loss=$null})
  RenderNetworkTest $script:netState
  $ps=[powershell]::Create()
  $fn=(Get-Command MeasureConnection).ScriptBlock.ToString()
@@ -1405,10 +1474,14 @@ $script:netTimer.Add_Tick({
  if(!$script:netJob){return}
  RenderNetworkTest $script:netState
  if($script:netJob.Async.IsCompleted){
-  try{$null=$script:netJob.PS.EndInvoke($script:netJob.Async);if($script:netJob.PS.HadErrors){throw ($script:netJob.PS.Streams.Error|Out-String)};RenderNetworkTest $script:netState}catch{$w.FindName('NetStage').Text=if($script:netState.Stage -eq 'ANNULLAMENTO'){'ANNULLATO'}else{"ERRORE: $($_.Exception.Message)"}}
+  try{$null=$script:netJob.PS.EndInvoke($script:netJob.Async);if($script:netJob.PS.HadErrors){throw ($script:netJob.PS.Streams.Error|Out-String)};RenderNetworkTest $script:netState;try{if($script:netState.NetworkConfig -ne (GetNetworkFingerprint)){$script:netState.NetworkConfig="ND";$script:netState.Stage="PARZIALE | configurazione cambiata durante il test"};SaveSpeedResult $script:netState;RefreshSpeedHistory}catch{$status.Text="Cronologia non salvata: $($_.Exception.Message)"}}catch{$w.FindName('NetStage').Text=if($script:netState.Stage -eq 'ANNULLAMENTO'){'ANNULLATO'}else{"ERRORE: $($_.Exception.Message)"}}
   $script:netJob.PS.Dispose();if($script:netState.CancelSource){$script:netState.CancelSource.Dispose()};$script:netJob=$null;$script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false
  }
 })
+$w.FindName('NetHistory').Add_Click({Guard {RefreshSpeedHistory;$w.FindName('Tabs').SelectedIndex=5}})
+$w.FindName('SpeedHistoryBack').Add_Click({$w.FindName('Tabs').SelectedIndex=4})
+$w.FindName('SpeedHistoryRefresh').Add_Click({Guard {RefreshSpeedHistory}})
+$w.FindName('Tabs').Add_SelectionChanged({param($sender,$args)if($args.Source -eq $sender -and $sender.SelectedIndex -eq 5){Guard {RefreshSpeedHistory}}})
 $w.FindName('NetStart').Add_Click({Guard {StartNetworkTest}})
 $w.FindName('NetCancel').Add_Click({Guard {if($script:netJob){$script:netState.Stage='ANNULLAMENTO';$script:netState.CancelSource.Cancel();$w.FindName('NetCancel').IsEnabled=$false}}})
 $w.FindName('NetRefresh').Add_Click({Guard {RefreshNetwork}})
@@ -1421,7 +1494,7 @@ $w.FindName('NetGrid').AddHandler([Windows.Controls.Primitives.ButtonBase]::Clic
 })
 $w.FindName('NetApply').Add_Click({Guard {ApplyNetworkSelected}})
 $w.FindName('NetRestore').Add_Click({Guard {RestoreNetwork}})
-$w.FindName('NetGrid').Add_SelectionChanged({$r=$w.FindName('NetGrid').SelectedItem;if($r){$w.FindName('NetDetail').Text="$($r.Name) | $($r.Before) -> $($r.After) | PWU $($r.PWU)"+[Environment]::NewLine+$r.Note}})
+$w.FindName('NetGrid').Add_SelectionChanged({$r=$w.FindName('NetGrid').SelectedItem;if($r){$w.FindName('NetDetail').Text="$($r.Name) | $($r.VerifiedStatus) | $($r.Before) -> $($r.After) | PWU $($r.PWU)"+[Environment]::NewLine+$r.Note}})
 $w.Add_Closed({StopNetworkTest})
 
 foreach($id in @('Power','Storage','Graphics','GpuApp','Software','Features','Services','Diag','Updates','Audio','Apps','Debloat','Startup','Files','Backup')){
@@ -1446,7 +1519,7 @@ $w.FindName('Clear').Add_Click({foreach($r in $script:rows){$r.Selected=$false};
 $w.FindName('Scan').Add_Click({Guard {$path=SaveScan;$w.FindName('Report').Text=Get-Content $path -Raw;RefreshRows;$w.FindName('Tabs').SelectedIndex=1;$status.Text="Report: $path"}})
 
 $w.FindName('Undo').Add_Click({Guard {if(ConfirmDark 'Ripristino completo' 'Ripristinare tutte le modifiche gestite dal programma? Le modifiche esterne non saranno sovrascritte.'){RestoreAll;RefreshRows;$status.Text='Ripristino verificato'}}})
-$w.FindName('Apply').Add_Click({Guard {
+$w.FindName('Apply').Add_Click({Guard { if($script:netJob){throw "Attendi la fine dello speed test prima di applicare tweak."}
  $null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true);$null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
  $sel=@($script:rows|Where-Object Selected)
  if(!$sel.Count){$status.Text='Nessuna modifica selezionata';return}
@@ -1455,8 +1528,8 @@ $w.FindName('Apply').Add_Click({Guard {
  $ok=0;$fail=0
  $script:activeBatch=SnapshotRecords $sel
  try{foreach($r in $sel){try{ApplyValue $r;$ok++}catch{$fail++;Event $r.Name '-' '-' $_.Exception.Message}}}finally{$script:activeBatch=$null}
- RefreshRows;$w.FindName('Tabs').SelectedIndex=2
- $status.Text="Operazioni verificate o gia configurate: $ok; errori: $fail. Puoi chiudere il programma. Alcune preferenze richiedono nuovo accesso."
+ RefreshRows;$w.FindName('Tabs').SelectedIndex=0
+ $status.Text="Valori scritti e riletti o gia configurati: $ok; errori: $fail. Puoi chiudere il programma. Alcune preferenze richiedono nuovo accesso."
 }})
 if($UiTest){
  $cl=$w.FindName('CategoryList')
@@ -1536,6 +1609,19 @@ if($UiTest){
  $w.FindName('NetClear').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
  if(@($script:netRows|Where-Object Selected).Count -or $w.FindName('NetSelectedCount').Text -ne '0 selezionati'){throw 'Network clear failed'}
  $script:netRows=$realNetRows;$w.FindName('NetGrid').ItemsSource=$realNetRows
+ $savedHistoryPath=$script:speedHistoryPath
+ $script:speedHistoryPath=Join-Path $env:TEMP ('BrabusHistoryTest-'+[guid]::NewGuid().ToString('N')+'.json')
+ try{
+  $h=@{TestId='test1';Stage='COMPLETATO';Elapsed=26.5;Down=100;Up=20;Ping=30;Jitter=4;Loss=0;NetworkConfig='testA'}
+  SaveSpeedResult $h;SaveSpeedResult $h
+  $h.TestId='test2';$h.Down=110;$h.NetworkConfig='testB';SaveSpeedResult $h
+  $h.TestId='partial';$h.Stage='PARZIALE';$h.Up=$null;SaveSpeedResult $h
+  $w.FindName('NetHistory').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+  if(@(ReadSpeedHistory).Count -ne 3 -or $w.FindName('Tabs').SelectedIndex -ne 5 -or $w.FindName('SpeedHistoryCompare').Text -notmatch '\+10[,.]00'){throw 'Speed history test failed'}
+  $w.FindName('SpeedHistoryBack').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+  if($w.FindName('Tabs').SelectedIndex -ne 4){throw 'History back failed'}
+  'HISTORY OK - persistence, dedup, partial exclusion, comparison'
+ }finally{Remove-Item -LiteralPath $script:speedHistoryPath -ErrorAction SilentlyContinue;$script:speedHistoryPath=$savedHistoryPath}
  Write-Output 'NETWORK MULTISELECT OK'
  Write-Output ("NETWORK UI OK: "+@($w.FindName('NetGrid').ItemsSource).Count+" compatible rows")
  $w.Close();Write-Output 'UI TEST OK - PWU, combined filters, token search, separate counters, category filters, select visible, all integrated pages';exit 0
