@@ -4040,7 +4040,10 @@ function Invoke-UiTest {
         }
         "MEASURE: $($size[0])x$($size[1]) | visible=$initial of $($items.Count) viewport=$($scroll.ViewportHeight) extent=$($scroll.ExtentHeight) window=$($window.ActualHeight)"
         if ($initial -lt 23) { throw "Too few items visible: $initial" }
-        if ($size[0] -eq 1440 -and $initial -ne $items.Count) { throw 'Default layout should fit all navigation items' }
+        # Windows caps a window at the screen size: the full-fit check only applies when 1440x900 really fits.
+        $fullSize = $window.ActualWidth -ge ($size[0] - 1) -and $window.ActualHeight -ge ($size[1] - 1)
+        if ($size[0] -eq 1440 -and $fullSize -and $initial -ne $items.Count) { throw 'Default layout should fit all navigation items' }
+        if ($size[0] -eq 1440 -and -not $fullSize) { "NAV FULL-FIT CHECK SKIPPED: screen smaller than 1440x900 ($($window.ActualWidth)x$($window.ActualHeight))" }
         $scroll.ScrollToEnd()
         $window.UpdateLayout()
         $files = $script:Ui.Files
