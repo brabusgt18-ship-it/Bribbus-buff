@@ -1,0 +1,7 @@
+# Release files are checksummed byte-for-byte: never convert their line endings.
+*.ps1 -text diff
+*.psd1 -text diff
+SHA256SUMS.txt -text diff
+archive/** -text diff
+*.md text eol=lf
+*.yml text eol=lf

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-powershell-51:
+    name: Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        shell: powershell
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Verify release checksums
+        shell: powershell
+        run: .\tools\Update-Checksums.ps1 -Verify
+      - name: Run tests (unit, static, Windows integration)
+        shell: powershell
+        run: .\tests\Invoke-Tests.ps1 -ExcludeTag UI -OutputFile test-results-ps51.xml
+      - name: Run GUI test (-UiTest)
+        # Hosted runners may not provide an interactive desktop for WPF: reported, not blocking.
+        continue-on-error: true
+        shell: powershell
+        run: .\tests\Invoke-Tests.ps1 -Tag UI -OutputFile test-results-ui.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-windows-powershell
+          path: test-results-*.xml
+
+  powershell-7:
+    name: PowerShell 7 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Run tests
+        shell: pwsh
+        run: ./tests/Invoke-Tests.ps1 -ExcludeTag UI -OutputFile test-results-pwsh.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-pwsh-${{ matrix.os }}
+          path: test-results-*.xml
