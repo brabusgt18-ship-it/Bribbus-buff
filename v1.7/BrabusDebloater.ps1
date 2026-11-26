@@ -790,12 +790,46 @@ function VerificationLabel($r,$records,[bool]$valid=$true,$boot=$null){
   return 'CONFIGURATO / VERIFICATO'
  }catch{return 'ERRORE VERIFICA'}
 }
+function SetActionFlags($r,$records,[bool]$valid){
+ $rec=@($records|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}|Select-Object -First 1)
+ $apply=$valid -and !$rec.Count -and $r.Status -eq 'DISPONIBILE'
+ $restore=$valid -and $rec.Count -gt 0 -and $r.VerifiedStatus -notin @('NON VERIFICATO','TARGET CAMBIATO','ERRORE VERIFICA','BACKUP NON VALIDO')
+ $r|Add-Member NoteProperty CanApply ([bool]$apply) -Force
+ $r|Add-Member NoteProperty CanRestore ([bool]$restore) -Force
+ $r|Add-Member NoteProperty CanSelect ([bool]($apply -or $restore)) -Force
+ $r|Add-Member NoteProperty SelectionHint $(if($apply){'Seleziona per applicare'}elseif($restore){'Seleziona per ripristinare il valore originale'}elseif($rec.Count){'Conflitto o errore: consulta Backup / Recovery'}else{'Gia configurato senza backup; non modificabile automaticamente'}) -Force
+}
+function IsApplyChoice($r){
+ if($r.PSObject.Properties['CanApply']){return [bool]$r.CanApply}
+ return ($r.Status -eq 'DISPONIBILE' -and (!$r.PSObject.Properties['CanSelect'] -or $r.CanSelect))
+}
+function IsRestoreChoice($r){return [bool]$r.CanRestore}
+function GetActionRows([bool]$network,[bool]$restore){
+ $rows=if($network){$script:netRows}else{$script:rows}
+ foreach($r in @($rows)){if($r.Selected -and $(if($restore){IsRestoreChoice $r}else{IsApplyChoice $r})){$r}}
+}
+function SelectRestoreChoices([bool]$network){
+ $rows=if($network){$script:netRows}else{$script:rows}
+ foreach($r in @($rows)){$r.Selected=(IsRestoreChoice $r)}
+ if($network){$w.FindName('NetGrid').Items.Refresh();UpdateNetworkCount}else{$grid.Items.Refresh();FilterRows;UpdateApplyContext}
+}
+function CommitTweakCheckbox($sender,$eventArgs){
+ $check=$eventArgs.OriginalSource
+ if($check -isnot [Windows.Controls.CheckBox]){return}
+ $r=$check.DataContext
+ if(!$r -or !$r.PSObject.Properties['Selected']){return}
+ if($r.PSObject.Properties['CanSelect'] -and !$r.CanSelect){$r.Selected=$false;$check.IsChecked=$false;return}
+ $r.Selected=($check.IsChecked -eq $true)
+ $binding=$check.GetBindingExpression([Windows.Controls.Primitives.ToggleButton]::IsCheckedProperty)
+ if($binding){$binding.UpdateSource()}
+ if($sender.Name -eq 'NetGrid'){UpdateNetworkCount}else{UpdateApplyContext;if($script:stateFilter -eq 'Selected'){$null=$w.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background,[Action]{FilterRows})}}
+}
 function SetVerificationLabels($rows){
  $valid=$true;$records=@()
  try{$records=@(ReadJournal)}catch{$valid=$false}
  foreach($r in @($rows)){
   $label=VerificationLabel $r $records $valid
-  $r|Add-Member NoteProperty VerifiedStatus $label -Force
+  $r|Add-Member NoteProperty VerifiedStatus $label -Force;SetActionFlags $r $records $valid
  }
 }
 function Inventory{
@@ -940,7 +974,7 @@ public static class BrabusDwm {
 <TextBlock Text="Protezione Windows intatta" Foreground="#73E6AE" TextWrapping="Wrap" Margin="4,5,0,2" FontSize="11"/>
 </StackPanel></ScrollViewer></Border>
 <TabControl Grid.Column="1" Name="Tabs"><TabItem Header="IMPOSTAZIONI"><DockPanel Margin="6"><Border DockPanel.Dock="Bottom" Background="#17283C" Padding="12" CornerRadius="6" Margin="0,8,0,0"><TextBlock Name="TweakDetail" Text="Seleziona una voce per vedere i dettagli." TextWrapping="Wrap" MinHeight="45"/></Border><StackPanel DockPanel.Dock="Top" Margin="0,0,0,8"><DockPanel><Button DockPanel.Dock="Right" Name="SelectPage" Content="SELEZIONA VISIBILI"/><TextBlock Name="CategoryTitle" Text="IMPOSTAZIONI / Tutte" FontSize="21" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center"/></DockPanel><TextBlock Text="RICERCA / nome, categoria, stato, descrizione o chiave" Foreground="#9EB5CC" FontSize="11"/><TextBox Name="Filter" Margin="0,4,0,5"/>
-<WrapPanel Margin="0,0,0,3"><TextBlock Text="PWU" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center" Margin="0,0,6,0"/><Button Name="PWUAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="PWULow" Content="Low" Padding="8,4" Margin="2"/><Button Name="PWUMedium" Content="Medium" Padding="8,4" Margin="2"/><Button Name="PWUHigh" Content="High" Padding="8,4" Margin="2"/><TextBlock Text="STATO" Foreground="#9EB5CC" VerticalAlignment="Center" Margin="10,0,5,0"/><Button Name="StateAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="StateAvailable" Content="Disponibili" Padding="8,4" Margin="2"/><Button Name="StateDone" Content="Configurati" Padding="8,4" Margin="2"/><Button Name="StateSelected" Content="Selezionati" Padding="8,4" Margin="2"/><Button Name="ResetFilters" Content="RESET" Padding="8,4" Margin="2"/></WrapPanel><DockPanel><TextBlock Name="FilterCount" Foreground="#AFC9DF" VerticalAlignment="Center" DockPanel.Dock="Right"/><TextBlock Text="PWU: impatto potenziale, non benchmark. Clicca la colonna per ordinare." Foreground="#9EB5CC" FontSize="11" TextWrapping="Wrap"/></DockPanel></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTemplateColumn Header="PWU" SortMemberPath="PWURank" CanUserSort="True" IsReadOnly="True" Width="78"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="4" Padding="4,2" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding PWUReason}"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#28394C"/><Style.Triggers><DataTrigger Binding="{Binding PWU}" Value="Medium"><Setter Property="Background" Value="#78521D"/></DataTrigger><DataTrigger Binding="{Binding PWU}" Value="High"><Setter Property="Background" Value="#175A46"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding PWU}" FontWeight="SemiBold" FontSize="11" Foreground="#F2F6FC"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="2*" MinWidth="155"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Stato" Binding="{Binding VerifiedStatus}" IsReadOnly="True" Width="175"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="3*" MinWidth="115"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CONTROL CENTER"><DockPanel Margin="8">
+<WrapPanel Margin="0,0,0,3"><TextBlock Text="PWU" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center" Margin="0,0,6,0"/><Button Name="PWUAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="PWULow" Content="Low" Padding="8,4" Margin="2"/><Button Name="PWUMedium" Content="Medium" Padding="8,4" Margin="2"/><Button Name="PWUHigh" Content="High" Padding="8,4" Margin="2"/><TextBlock Text="STATO" Foreground="#9EB5CC" VerticalAlignment="Center" Margin="10,0,5,0"/><Button Name="StateAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="StateAvailable" Content="Disponibili" Padding="8,4" Margin="2"/><Button Name="StateDone" Content="Configurati" Padding="8,4" Margin="2"/><Button Name="StateSelected" Content="Selezionati" Padding="8,4" Margin="2"/><Button Name="ResetFilters" Content="RESET" Padding="8,4" Margin="2"/></WrapPanel><DockPanel><TextBlock Name="FilterCount" Foreground="#AFC9DF" VerticalAlignment="Center" DockPanel.Dock="Right"/><TextBlock Text="PWU: impatto potenziale, non benchmark. Clicca la colonna per ordinare." Foreground="#9EB5CC" FontSize="11" TextWrapping="Wrap"/></DockPanel></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsEnabled="{Binding CanSelect,FallbackValue=True}" IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding SelectionHint}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTemplateColumn Header="PWU" SortMemberPath="PWURank" CanUserSort="True" IsReadOnly="True" Width="78"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="4" Padding="4,2" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding PWUReason}"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#28394C"/><Style.Triggers><DataTrigger Binding="{Binding PWU}" Value="Medium"><Setter Property="Background" Value="#78521D"/></DataTrigger><DataTrigger Binding="{Binding PWU}" Value="High"><Setter Property="Background" Value="#175A46"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding PWU}" FontWeight="SemiBold" FontSize="11" Foreground="#F2F6FC"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="2*" MinWidth="155"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Stato" Binding="{Binding VerifiedStatus}" IsReadOnly="True" Width="175"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="3*" MinWidth="115"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CONTROL CENTER"><DockPanel Margin="8">
 <Border DockPanel.Dock="Top" Background="#14283B" Padding="16" CornerRadius="8" Margin="0,0,0,10"><StackPanel>
 <TextBlock Name="PageTitle" Text="CONTROL CENTER" FontSize="26" FontWeight="Bold" Foreground="#43D7E8"/>
 <TextBlock Name="PageHint" Text="Apri uno strumento dal menu a sinistra." Foreground="#AFC9DF" TextWrapping="Wrap" Margin="0,6,0,8"/>
@@ -969,7 +1003,7 @@ public static class BrabusDwm {
 <Border Background="#12263A" CornerRadius="8" Padding="10" Margin="4,0,0,0"><StackPanel><TextBlock Text="PING SOTTO UPLOAD / ms" Foreground="#AFC9DF" FontSize="11"/><TextBlock Name="NetUpLoaded" Text="--" FontSize="26" FontWeight="Bold" Foreground="#F4C77B"/><TextBlock Text="Media ICMP durante il traffico" FontSize="11"/></StackPanel></Border>
 </UniformGrid><Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING A RIPOSO" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetHistory" Content="CRONOLOGIA TEST"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
 <Border Background="#14283B" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><TextBlock Text="DNS ATTUALI / INTERFACCE" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="NetInfo" Text="--" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Border>
-<TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Spunta le voci o usa Seleziona tutto. Driver: admin e riavvio manuale; browser: backup originale. Voci gia configurate o con backup attivo escluse." TextWrapping="Wrap" Foreground="#AFC9DF"/>
+<TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Spunta le voci o usa Seleziona tutto. Driver: admin e riavvio manuale; browser: backup originale. Spunta disponibili per applicare; spunta voci con backup per ripristinare. Seleziona tutto sceglie solo i disponibili." TextWrapping="Wrap" Foreground="#AFC9DF"/>
 <DataGrid Name="NetGrid" IsReadOnly="False" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsEnabled="{Binding CanSelect}" IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding SelectionHint}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" IsReadOnly="True" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding VerifiedStatus}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid>
 <TextBlock Name="NetDetail" Text="Seleziona una voce per dettagli." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,5"/><WrapPanel><Button Name="NetSelectAll" Content="SELEZIONA TUTTO"/><Button Name="NetClear" Content="DESELEZIONA TUTTO"/><Button Name="NetApply" Content="APPLICA SELEZIONATI" Background="#0C7189"/><TextBlock Name="NetSelectedCount" Text="0 selezionati" VerticalAlignment="Center" Margin="6,0"/><Button Name="NetRestore" Content="RIPRISTINA DRIVER" IsEnabled="False"/><TextBlock Name="NetBackupCount" Text="Backup rete: --" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
 </StackPanel></ScrollViewer></TabItem><TabItem Header="STORICO RETE"><DockPanel Margin="9">
@@ -977,7 +1011,7 @@ public static class BrabusDwm {
 <DataGrid Name="SpeedHistoryGrid" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" EnableRowVirtualization="True"><DataGrid.Columns>
 <DataGridTextColumn Header="Data / ora" Binding="{Binding LocalDate}" Width="155"/><DataGridTextColumn Header="Down Mbps" Binding="{Binding Down}" Width="90"/><DataGridTextColumn Header="Up Mbps" Binding="{Binding Up}" Width="85"/><DataGridTextColumn Header="Ping ms" Binding="{Binding Ping}" Width="75"/><DataGridTextColumn Header="Jitter ms" Binding="{Binding Jitter}" Width="75"/><DataGridTextColumn Header="Loss %" Binding="{Binding Loss}" Width="65"/><DataGridTextColumn Header="Durata s" Binding="{Binding Seconds}" Width="75"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" Width="130"/><DataGridTextColumn Header="Ping down ms" Binding="{Binding DownLoadedPing}" Width="95"/><DataGridTextColumn Header="Ping up ms" Binding="{Binding UpLoadedPing}" Width="90"/><DataGridTextColumn Header="Metodo" Binding="{Binding Method}" Width="175"/><DataGridTextColumn Header="Config." Binding="{Binding NetworkConfig}" Width="110"/>
 </DataGrid.Columns></DataGrid></DockPanel></TabItem></TabControl></Grid>
-<Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="6" Margin="0,6,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
+<Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="6" Margin="0,6,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="12,10"/><Button DockPanel.Dock="Right" Name="RestoreSelected" Content="RIPRISTINA SELEZIONATI (0)" FontWeight="Bold" Padding="9,10" IsEnabled="False"/><Button DockPanel.Dock="Right" Name="SelectRestore" Content="SELEZIONA RIPRISTINABILI" Padding="7,10"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
 </Grid></Window>
 '@
 $w=[Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
@@ -1057,7 +1091,7 @@ function FilterRows{
   foreach($term in $terms){if($hay.IndexOf($term,[StringComparison]::OrdinalIgnoreCase) -lt 0){return $false}}
   return $true
  })
- $grid.ItemsSource=$visible
+ $grid.ItemsSource=$visible;if(Get-Command UpdateApplyContext -ErrorAction SilentlyContinue){UpdateApplyContext}
  $w.FindName('FilterCount').Text="$($visible.Count) / $($script:rows.Count) visibili"
 }
 function UpdateLog{if(Test-Path $log){$w.FindName('History').Text=(Get-Content $log -Tail 200)-join [Environment]::NewLine}}
@@ -1081,7 +1115,7 @@ function ImportProfile{
  $p=Get-Content -LiteralPath $dlg.FileName -Raw|ConvertFrom-Json
  if($p.Format -ne 'BrabusPreset' -or $p.Version -ne 1){throw 'Formato non valido'}
  $ids=@($p.Selections|Where-Object {$_ -is [string]})
- foreach($r in $script:rows){$r.Selected=($ids -contains (ProfileId $r) -and $r.Status -eq 'DISPONIBILE')}
+ foreach($r in $script:rows){$r.Selected=($ids -contains (ProfileId $r) -and (IsApplyChoice $r))}
  $matched=@($script:rows|Where-Object Selected).Count
  $known=@($script:rows|ForEach-Object {ProfileId $_})
  $unknown=@($ids|Where-Object {$_ -notin $known}).Count
@@ -1089,7 +1123,7 @@ function ImportProfile{
  $status.Text="Preset importato: $matched selezionati, $unknown non compatibili. Nessuna modifica applicata."
 }
 function SelectPreset($p){
- foreach($r in $script:rows){$r.Selected=($r.Status -eq 'DISPONIBILE' -and ($r.Level -eq 'Safe' -or ($p -ne 'Safe' -and $r.Level -eq 'Gaming')))}
+ foreach($r in $script:rows){$r.Selected=((IsApplyChoice $r) -and ($r.Level -eq 'Safe' -or ($p -ne 'Safe' -and $r.Level -eq 'Gaming')))}
  $grid.Items.Refresh()
  $w.FindName('Tabs').SelectedIndex=0; $status.Text="${p}: selezionati $(@($script:rows|Where-Object Selected).Count) tweak conservativi. Le opzioni personali e di avvio restano manuali."
 }
@@ -1198,8 +1232,8 @@ $w.FindName('CategoryList').Add_SelectionChanged({$c=$w.FindName('CategoryList')
 $w.FindName('Grid').Add_SelectionChanged({$r=$grid.SelectedItem;if($r){$w.FindName('TweakDetail').Text="$($r.Name) | $($r.VerifiedStatus) | $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note+[Environment]::NewLine+"PWU $($r.PWU): $($r.PWUReason)"}})
 $w.FindName('SelectPage').Add_Click({Guard {
  $pending=@(ReadJournal);$count=0
- foreach($r in @($grid.ItemsSource)){if($r.Status -eq 'DISPONIBILE' -and !@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count){$r.Selected=$true;$count++}}
- $grid.Items.Refresh(); if($script:stateFilter -eq 'Selected'){FilterRows};$status.Text="Selezionate $count voci visibili. Nessuna modifica applicata."
+ foreach($r in @($grid.ItemsSource)){if((IsApplyChoice $r) -and !@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count){$r.Selected=$true;$count++}}
+ $grid.Items.Refresh(); if($script:stateFilter -eq 'Selected'){FilterRows};UpdateApplyContext;$status.Text="Selezionate $count voci visibili. Nessuna modifica applicata."
 }})
 
 foreach($id in @('PWUAll','PWULow','PWUMedium','PWUHigh')){
@@ -1212,12 +1246,7 @@ foreach($id in @('StateAll','StateAvailable','StateDone','StateSelected')){
 }
 $w.FindName('ResetFilters').Add_Click({$script:pwuFilter='All';$script:stateFilter='All';$w.FindName('Filter').Text='';ShowCategory 'Tutte';UpdateFilterButtons;FilterRows})
 UpdateFilterButtons
-$grid.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.RoutedEventHandler]{
- param($sender,$args)
- if($script:stateFilter -eq 'Selected' -and $args.OriginalSource -is [Windows.Controls.CheckBox]){
-  $null=$w.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background,[Action]{FilterRows})
- }
-})
+$grid.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.RoutedEventHandler]{param($sender,$eventArgs) CommitTweakCheckbox $sender $eventArgs},$true)
 $w.FindName('Filter').Add_TextChanged({FilterRows})
 $w.FindName('Export').Add_Click({Guard {ExportProfile}})
 $w.FindName('Import').Add_Click({Guard {ImportProfile}})
@@ -1308,7 +1337,7 @@ function RefreshNetwork {
   $hint=if(!$valid){'Backup non valido'}elseif($already){'Backup attivo: ripristina prima'}elseif(!$can){'Gia configurato'}elseif($driver){'Richiede admin per applicare'}else{'Disponibile'}
   $r|Add-Member NoteProperty VerifiedStatus (VerificationLabel $r $pending $valid $boot) -Force; $r|Add-Member NoteProperty Selected $false -Force
   $r|Add-Member NoteProperty CanSelect $can -Force
-  $r|Add-Member NoteProperty SelectionHint $hint -Force
+  $r|Add-Member NoteProperty SelectionHint $hint -Force;SetActionFlags $r $pending $valid
   $r
  })
  $w.FindName('NetGrid').ItemsSource=$script:netRows
@@ -1321,23 +1350,61 @@ function UpdateNetworkCount{
  $w.FindName('NetSelectedCount').Text="$n selezionati";UpdateApplyContext
 }
 function SelectNetworkAll([bool]$value){
- foreach($r in @($script:netRows)){$r.Selected=($value -and $r.CanSelect)}
+ foreach($r in @($script:netRows)){$r.Selected=($value -and (IsApplyChoice $r))}
  $w.FindName('NetGrid').Items.Refresh();UpdateNetworkCount
+}
+function InvokeApplyBatch($items){
+ $ok=0;$fail=0;$errors=@()
+ foreach($r in @($items)){
+  try{
+   if($r.Path.StartsWith('NET|')){WithNetworkJournal {ApplyValue $r}}else{ApplyValue $r}
+   if(!(Same (ReadValue $r.Path $r.Key) $r.TargetState)){throw 'Rilettura finale non corrisponde'}
+   $ok++
+  }catch{$fail++;$errors+="$($r.Name): $($_.Exception.Message)";Event $r.Name '-' '-' ('ERRORE: '+$_.Exception.Message)}
+ }
+ [pscustomobject]@{OK=$ok;Failed=$fail;Errors=$errors}
+}
+function InvokeRestoreBatch($items){
+ $ok=0;$fail=0;$errors=@()
+ foreach($r in @($items)){
+  try{
+   $driver=$r.Path.StartsWith('NET|')
+   $records=if($driver){@(GetNetworkBackup)}else{@(ReadJournal)}
+   $rec=@($records|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}|Select-Object -First 1)
+   if(!$rec.Count){throw 'Backup originale assente'}
+   if($driver){WithNetworkJournal {RestoreRecords @($rec[0].Id)}}else{RestoreRecords @($rec[0].Id)}
+   if(!(Same (ReadValue $r.Path $r.Key) $rec[0].Old)){throw 'Rilettura finale ripristino non corrisponde'}
+   $ok++
+  }catch{$fail++;$errors+="$($r.Name): $($_.Exception.Message)";Event $r.Name '-' '-' ('ERRORE RIPRISTINO: '+$_.Exception.Message)}
+ }
+ [pscustomobject]@{OK=$ok;Failed=$fail;Errors=$errors}
+}
+function ShowBatchResult($result,$verb){
+ $status.Text=("$verb : $($result.OK) verificati, $($result.Failed) errori. Riavvio PC/app se richiesto.")
+ if($result.Failed){$null=ConfirmDark 'Operazioni non riuscite' ($result.Errors -join [Environment]::NewLine)}
+}
+function RestoreSelectedTweaks{
+ if($script:netJob){throw 'Attendi la fine dello speed test'}
+ $network=$w.FindName('Tabs').SelectedIndex -eq 4
+ $items=@(GetActionRows $network $true)
+ if(!$items.Count){$status.Text='Nessun tweak ripristinabile selezionato';return}
+ if(@($items|Where-Object Path -like 'NET|*').Count -and !(IsElevated)){throw 'Per ripristinare i driver avvia PowerShell come amministratore. Nessuna modifica eseguita.'}
+ if(!(ConfirmDark 'Ripristino selettivo' ("Ripristinare $($items.Count) valori originali? Nessun riavvio automatico."+[Environment]::NewLine+($items.Name -join [Environment]::NewLine)))){return}
+ $result=InvokeRestoreBatch $items
+ RefreshRows;if($network){RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4}else{$script:netRows=$null;$w.FindName('Tabs').SelectedIndex=0}
+ UpdateApplyContext;ShowBatchResult $result 'Ripristino'
 }
 function ApplyNetworkSelected{ if($script:netJob){throw "Attendi la fine dello speed test prima di applicare tweak."}
  $g=$w.FindName('NetGrid')
  $null=$g.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true)
  $null=$g.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
- $selected=@($script:netRows|Where-Object {$_.Selected -and $_.CanSelect -and $_.Status -eq 'DISPONIBILE'})
+ $selected=@(GetActionRows $true $false)
  if(!$selected.Count){$status.Text='Nessun tweak rete disponibile selezionato';return}
  $drivers=@($selected|Where-Object {$_.Path.StartsWith('NET|')})
  if($drivers.Count -and !(IsElevated)){throw 'Selezione contiene tweak driver: riapri PowerShell come amministratore, oppure deseleziona i driver. Nessuna modifica applicata.'}
  $preview="Modifiche selezionate: $($selected.Count)"+[Environment]::NewLine+'Backup prima della scrittura. Nessun riavvio automatico. Possibili variazioni di latenza, throughput e consumi; benefici non garantiti.'+[Environment]::NewLine+[Environment]::NewLine+(($selected|ForEach-Object {"$($_.Name): $($_.Before) -> $($_.After) | $($_.Note)"})-join [Environment]::NewLine)
  if(!(ConfirmDark 'Conferma tweak Internet' $preview)){return}
- $ok=0;$fail=0
- foreach($r in $selected){try{if($r.Path.StartsWith('NET|')){WithNetworkJournal {ApplyValue $r}}else{ApplyValue $r};$ok++}catch{$fail++;Event $r.Name '-' '-' ('ERRORE RETE: '+$_.Exception.Message)}}
- RefreshRows;RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4
- $status.Text="Tweak scritti e riletti: $ok | errori: $fail. Stato nella tabella; driver richiedono riavvio manuale."
+ $result=InvokeApplyBatch $selected;RefreshRows;RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4;UpdateApplyContext;ShowBatchResult $result 'Applicazione rete'
 }
 function RestoreNetwork{ if($script:netJob){throw "Attendi la fine dello speed test prima di ripristinare."}
  if(!(IsElevated)){throw 'Ripristino driver: avvia PowerShell come amministratore'}
@@ -1567,35 +1634,30 @@ $w.FindName('SpeedHistoryBack').Add_Click({$w.FindName('Tabs').SelectedIndex=4})
 $w.FindName('SpeedHistoryRefresh').Add_Click({Guard {RefreshSpeedHistory}})
 function UpdateApplyContext{
  $tab=$w.FindName('Tabs').SelectedIndex
- $b=$w.FindName('Apply')
- if($tab -eq 4){
-  $sel=@($script:netRows|Where-Object {$_.Selected -and $_.CanSelect -and $_.Status -eq 'DISPONIBILE'})
-  $drivers=@($sel|Where-Object {$_.Path -like 'NET|*'}).Count
-  $b.Content="APPLICA TWEAK RETE ($($sel.Count))"
-  $b.IsEnabled=(!$script:netJob -and $sel.Count -gt 0)
-  $b.ToolTip=if($drivers -and !(IsElevated)){'Driver: riapri PowerShell come amministratore; nessuna scrittura senza autorizzazione.'}else{'Applica le voci spuntate nel Network Center'}
-  if($drivers -and !(IsElevated)){$status.Text="RETE: $($sel.Count) selezionati, $drivers richiedono amministratore."}
-  else{$status.Text="RETE: $($sel.Count) tweak selezionati."}
- }elseif($tab -eq 0){
-  $b.Content='APPLICA MODIFICHE SELEZIONATE';$b.IsEnabled=(!$script:netJob);$b.ToolTip='Applica le voci del catalogo generale'
- }else{
-  $b.Content='APPLICA MODIFICHE SELEZIONATE';$b.IsEnabled=$false;$b.ToolTip='Apri Impostazioni o Network Center per applicare tweak'
+ $b=$w.FindName('Apply');$restore=$w.FindName('RestoreSelected');$pick=$w.FindName('SelectRestore')
+ $active=$tab -in @(0,4);$network=$tab -eq 4
+ $sel=@(GetActionRows $network $false);$undo=@(GetActionRows $network $true)
+ $b.Content=if($network){"APPLICA TWEAK RETE ($($sel.Count))"}else{'APPLICA MODIFICHE SELEZIONATE'}
+ $b.IsEnabled=$active -and !$script:netJob -and $sel.Count -gt 0
+ $restore.Content="RIPRISTINA SELEZIONATI ($($undo.Count))";$restore.IsEnabled=$active -and !$script:netJob -and $undo.Count -gt 0
+ $pick.IsEnabled=$active -and !$script:netJob
+ $b.ToolTip="Applica $($sel.Count) modifiche disponibili; il ripristino e separato."
+ $restore.ToolTip='Ripristina solo valori originali presenti nel backup; non inverte tweak senza backup.'
+ if($active){
+  $drivers=@(@($sel)+@($undo)|Where-Object Path -like 'NET|*').Count
+  $prefix=if($network){'RETE'}else{'TWEAK'}
+  $status.Text=("$prefix : $($sel.Count) da applicare | $($undo.Count) da ripristinare")+$(if($drivers -and !(IsElevated)){' | driver: amministratore richiesto'}else{''})
  }
 }
 $w.FindName('Tabs').Add_SelectionChanged({param($sender,$eventArgs)if($eventArgs.OriginalSource -eq $sender -or $eventArgs.Source -eq $sender){Guard {if($w.FindName('Tabs').SelectedIndex -eq 5){RefreshSpeedHistory};if($w.FindName('Tabs').SelectedIndex -eq 4 -and !$script:netRows){RefreshNetwork};UpdateApplyContext}}})
+$w.FindName('RestoreSelected').Add_Click({Guard {RestoreSelectedTweaks}});$w.FindName('SelectRestore').Add_Click({Guard {SelectRestoreChoices ($w.FindName('Tabs').SelectedIndex -eq 4)}})
 $w.FindName('NetStart').Add_Click({Guard {StartNetworkTest}})
 $w.FindName('NetCancel').Add_Click({Guard {if($script:netJob){$script:netState.Stage='ANNULLAMENTO';$script:netState.CancelSource.Cancel();$w.FindName('NetCancel').IsEnabled=$false}}})
 $w.FindName('NetRefresh').Add_Click({Guard {RefreshNetwork}})
 $w.FindName('NetFlushDNS').Add_Click({Guard {if(ConfirmDark 'Cache DNS' 'Svuotare la cache DNS locale? Non cambia i server DNS e non promette ping inferiore. La cache verra ricostruita automaticamente.'){Clear-DnsClientCache -ErrorAction Stop;$status.Text='Cache DNS svuotata'}}})
 $w.FindName('NetSelectAll').Add_Click({Guard {SelectNetworkAll $true}})
 $w.FindName('NetClear').Add_Click({Guard {SelectNetworkAll $false}})
-$w.FindName('NetGrid').AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.RoutedEventHandler]{
- param($sender,$eventArgs)
- if($eventArgs.OriginalSource -is [Windows.Controls.CheckBox]){
-  $binding=$eventArgs.OriginalSource.GetBindingExpression([Windows.Controls.Primitives.ToggleButton]::IsCheckedProperty)
-  if($binding){$binding.UpdateSource()};UpdateNetworkCount
- }
-})
+$w.FindName('NetGrid').AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.RoutedEventHandler]{param($sender,$eventArgs) CommitTweakCheckbox $sender $eventArgs},$true)
 $w.FindName('NetApply').Add_Click({Guard {ApplyNetworkSelected}})
 $w.FindName('NetRestore').Add_Click({Guard {RestoreNetwork}})
 $w.FindName('NetGrid').Add_SelectionChanged({$r=$w.FindName('NetGrid').SelectedItem;if($r){$w.FindName('NetDetail').Text="$($r.Name) | $($r.VerifiedStatus) | $($r.Before) -> $($r.After) | PWU $($r.PWU)"+[Environment]::NewLine+$r.Note}})
@@ -1613,27 +1675,23 @@ $w.FindName('SelectAll').Add_Click({Guard {if($w.FindName('Tabs').SelectedIndex 
  $pending=@(ReadJournal)
  $count=0
  foreach($r in $script:rows){
-  $r.Selected=($r.Status -eq 'DISPONIBILE' -and !@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count)
+  $r.Selected=((IsApplyChoice $r) -and !@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count)
   if($r.Selected){$count++}
  }
  $grid.Items.Refresh()
- if($script:stateFilter -eq 'Selected'){FilterRows};$status.Text="Selezionate $count modifiche disponibili. Incluse opzioni personali: controlla le conseguenze. Nessuna modifica applicata."
+ if($script:stateFilter -eq 'Selected'){FilterRows};UpdateApplyContext;$status.Text="Selezionate $count modifiche disponibili. Incluse opzioni personali: controlla le conseguenze. Nessuna modifica applicata."
 }})
-$w.FindName('Clear').Add_Click({if($w.FindName('Tabs').SelectedIndex -eq 4){SelectNetworkAll $false;return};foreach($r in $script:rows){$r.Selected=$false};$grid.Items.Refresh();FilterRows})
+$w.FindName('Clear').Add_Click({if($w.FindName('Tabs').SelectedIndex -eq 4){SelectNetworkAll $false;return};foreach($r in $script:rows){$r.Selected=$false};$grid.Items.Refresh();FilterRows;UpdateApplyContext})
 $w.FindName('Scan').Add_Click({Guard {$path=SaveScan;$w.FindName('Report').Text=Get-Content $path -Raw;RefreshRows;$w.FindName('Tabs').SelectedIndex=1;$status.Text="Report: $path"}})
 
 $w.FindName('Undo').Add_Click({Guard {if(ConfirmDark 'Ripristino completo' 'Ripristinare tutte le modifiche gestite dal programma? Le modifiche esterne non saranno sovrascritte.'){RestoreAll;RefreshRows;$status.Text='Ripristino verificato'}}})
 $w.FindName('Apply').Add_Click({Guard { if($w.FindName('Tabs').SelectedIndex -eq 4){ApplyNetworkSelected;return};if($w.FindName('Tabs').SelectedIndex -ne 0){return};if($script:netJob){throw "Attendi la fine dello speed test prima di applicare tweak."}
  $null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true);$null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
- $sel=@($script:rows|Where-Object Selected)
+ $sel=@(GetActionRows $false $false)
  if(!$sel.Count){$status.Text='Nessuna modifica selezionata';return}
  $preview="ATTENZIONE: le opzioni personali possono limitare app, notifiche, funzioni browser e preferenze. Non tutte migliorano gli FPS. Verifica ogni voce prima di confermare."+[Environment]::NewLine+[Environment]::NewLine+(($sel|ForEach-Object {"$($_.Name): $($_.Before) -> $($_.After) | $($_.Note)"})-join [Environment]::NewLine)
  if(!(ConfirmDark 'Conferma modifiche persistenti' $preview)){return}
- $ok=0;$fail=0
- $script:activeBatch=SnapshotRecords $sel
- try{foreach($r in $sel){try{ApplyValue $r;$ok++}catch{$fail++;Event $r.Name '-' '-' $_.Exception.Message}}}finally{$script:activeBatch=$null}
- RefreshRows;$w.FindName('Tabs').SelectedIndex=0
- $status.Text="Valori scritti e riletti o gia configurati: $ok; errori: $fail. Puoi chiudere il programma. Alcune preferenze richiedono nuovo accesso."
+ $result=InvokeApplyBatch $sel;RefreshRows;$script:netRows=$null;$w.FindName('Tabs').SelectedIndex=0;UpdateApplyContext;ShowBatchResult $result 'Applicazione'
 }})
 if($UiTest){
  $cl=$w.FindName('CategoryList')
@@ -1740,6 +1798,42 @@ if($UiTest){
  $w.FindName('Tabs').SelectedIndex=0
  if($w.FindName('Apply').Content -ne 'APPLICA MODIFICHE SELEZIONATE'){throw ("General footer route failed: index="+$w.FindName('Tabs').SelectedIndex+" content="+$w.FindName('Apply').Content+" status="+$status.Text)}
  'PASS: footer routes network selection; sidebar select and clear; general context restored'
+ $script:netRows=@(
+  [pscustomobject]@{Name='Apply fixture';Path='NET|test';Key='a';Selected=$false;CanSelect=$true;CanApply=$true;CanRestore=$false;Status='DISPONIBILE'},
+  [pscustomobject]@{Name='Restore fixture 1';Path='NET|test';Key='b';Selected=$false;CanSelect=$true;CanApply=$false;CanRestore=$true;Status='GIA CONFIGURATO'},
+  [pscustomobject]@{Name='Restore fixture 2';Path='NET|test';Key='c';Selected=$false;CanSelect=$true;CanApply=$false;CanRestore=$true;Status='GIA CONFIGURATO'}
+ )
+ $w.FindName('NetGrid').ItemsSource=$script:netRows;$w.FindName('Tabs').SelectedIndex=4
+ $w.FindName('SelectRestore').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if(@(GetActionRows $true $true).Count -ne 2 -or @(GetActionRows $true $false).Count -ne 0 -or !$w.FindName('RestoreSelected').IsEnabled){throw 'Restore selection failed'}
+ $script:restoreRoute=0
+ function RestoreSelectedTweaks{$script:restoreRoute=@(GetActionRows $true $true).Count}
+ $w.FindName('RestoreSelected').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if($script:restoreRoute -ne 2){throw 'Restore routing failed'}
+ $w.FindName('SelectAll').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if(@(GetActionRows $true $false).Count -ne 1 -or @(GetActionRows $true $true).Count){throw 'Apply selection isolation failed'}
+ 'PASS: separate multi-apply and selective-restore routing'
+ function FindTestCheckbox($element){
+  if(!$element){return}
+  if($element -is [Windows.Controls.CheckBox]){return $element}
+  for($i=0;$i -lt [Windows.Media.VisualTreeHelper]::GetChildrenCount($element);$i++){
+   $found=FindTestCheckbox ([Windows.Media.VisualTreeHelper]::GetChild($element,$i))
+   if($found){return $found}
+  }
+ }
+ $w.Width=1440;$w.Height=900;$w.UpdateLayout()
+ $w.FindName('Clear').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ $ng=$w.FindName('NetGrid')
+ foreach($r in @($script:netRows[1],$script:netRows[2])){
+  $ng.ScrollIntoView($r);$ng.BringIntoView();$w.UpdateLayout();$ng.UpdateLayout()
+  $row=$ng.ItemContainerGenerator.ContainerFromItem($r)
+  $cb=FindTestCheckbox $row
+  if(!$cb -or !$cb.IsEnabled){throw 'Rendered checkbox not available'}
+  $method=$cb.GetType().GetMethod('OnClick',[Reflection.BindingFlags]'Instance,NonPublic')
+  $null=$method.Invoke($cb,@())
+ }
+ if(@(GetActionRows $true $true).Count -ne 2 -or $w.FindName('RestoreSelected').Content -ne 'RIPRISTINA SELEZIONATI (2)'){throw 'Real checkbox multiselect did not propagate'}
+ 'PASS: two rendered network checkboxes clicked, correct backing state and footer count'
  Write-Output 'NETWORK MULTISELECT OK'
  Write-Output ("NETWORK UI OK: "+@($w.FindName('NetGrid').ItemsSource).Count+" compatible rows")
  $w.Close();Write-Output 'UI TEST OK - PWU, combined filters, token search, separate counters, category filters, select visible, all integrated pages';exit 0
