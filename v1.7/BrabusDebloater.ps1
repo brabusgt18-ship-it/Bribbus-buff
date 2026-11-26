@@ -102,7 +102,7 @@ function MoreCatalog{
 }
 
 function ReadValue($path,$name){
- if($path.StartsWith("POWER|")){return PowerRead $path $name}
+ if($path.StartsWith("NET|")){return NetworkRead $path $name};if($path.StartsWith("POWER|")){return PowerRead $path $name}
  $k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($path)
  try{
   if($k -and $k.GetValueNames() -contains $name){return [pscustomobject]@{Exists=$true;Kind=[string]$k.GetValueKind($name);Value=$k.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}}
@@ -110,7 +110,7 @@ function ReadValue($path,$name){
  }finally{if($k){$k.Dispose()}}
 }
 function WriteValue($path,$name,$state){
- if($path.StartsWith("POWER|")){PowerWrite $path $name $state;return}
+ if($path.StartsWith("NET|")){NetworkWrite $path $name $state;return};if($path.StartsWith("POWER|")){PowerWrite $path $name $state;return}
  if($state.Exists){
   $k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($path)
   try{$value=switch($state.Kind){DWord{[int]$state.Value} String{[string]$state.Value} ExpandString{[string]$state.Value} default{throw 'Tipo non supportato'}}
@@ -161,7 +161,7 @@ function ValidateRecords($records){
  $seen=@{}
  foreach($r in @($records)){
   if($null -eq $r -or !$r.Path -or !$r.Key -or !$r.Name -or !$r.BatchId -or !$r.Id){throw 'Record backup incompleto'}
-  if($r.Path -notmatch '^(Software\\|System\\|Control Panel\\|POWER\|)' -or $r.Path -match '[\r\n]'){throw 'Percorso backup non supportato'}
+  if($r.Path -notmatch '^(Software\\|System\\|Control Panel\\|POWER\||NET\|)' -or $r.Path -match '[\r\n]'){throw 'Percorso backup non supportato'}
   foreach($v in @($r.Old,$r.Target)){
    if($null -eq $v -or $v.Exists -isnot [bool]){throw 'Stato backup non valido'}
    if($v.Exists -and $v.Kind -notin @('DWord','String','ExpandString')){throw 'Tipo backup non supportato'}
@@ -172,6 +172,12 @@ function ValidateRecords($records){
    if($parts.Count -ne 3){throw 'Record energia non valido'}
    $null=[guid]$parts[1];$null=[guid]$parts[2];$null=[guid]$r.Key
    if(!$r.Old.Exists -or !$r.Target.Exists -or $r.Old.Kind -ne 'DWord' -or $r.Target.Kind -ne 'DWord'){throw 'Stato energia non valido'}
+  }
+  if($r.Path.StartsWith('NET|')){
+   $parts=$r.Path.Split('|');$defs=NetworkDefinitions
+   if($parts.Count -ne 2 -or !$defs.ContainsKey($r.Key)){throw 'Record rete non autorizzato'}
+   $null=[guid]$parts[1]
+   foreach($v in @($r.Old,$r.Target)){if(!$v.Exists -or $v.Kind -ne 'String' -or [string]$v.Value -notmatch '^[0-9]{1,2}$'){throw 'Stato rete non valido'}}
   }
   $k="$($r.Path)|$($r.Key)"
   if($seen.ContainsKey($k)){throw 'Record duplicato nel backup'}
@@ -184,7 +190,7 @@ function LoadJournal {
  $pa=Test-Path -LiteralPath $journal;$pb=Test-Path -LiteralPath $mirror
  if(!$pa -and !$pb){
   if(Test-Path -LiteralPath $legacyJournal){throw 'Backup precedente non migrato: apri il centro backup'}
-  if(Test-Path -LiteralPath (Join-Path $backupDir 'initialized.flag')){throw 'Entrambe le copie backup mancanti: nessuna modifica consentita'}
+  if(Test-Path -LiteralPath $(if($initializedFlag){$initializedFlag}else{Join-Path $backupDir 'initialized.flag'})){throw 'Entrambe le copie backup mancanti: nessuna modifica consentita'}
   return
  }
  try{$a=ReadEnvelope $journal;if($a.Type -ne 'Journal'){throw 'Tipo errato'};ValidateRecords @($a.Records)}catch{$a=$null}
@@ -202,7 +208,7 @@ function SaveJournal($records){
  WriteEnvelope $mirror $payload
  $a=ReadEnvelope $journal;$b=ReadEnvelope $mirror
  if((BackupHash (ConvertTo-Json -InputObject $a -Depth 16 -Compress)) -ne (BackupHash (ConvertTo-Json -InputObject $b -Depth 16 -Compress))){throw 'Copie backup non identiche; modifica bloccata'}
- if(!(Test-Path -LiteralPath (Join-Path $backupDir 'initialized.flag'))){[IO.File]::WriteAllText((Join-Path $backupDir 'initialized.flag'),'2')}
+ if(!(Test-Path -LiteralPath $(if($initializedFlag){$initializedFlag}else{Join-Path $backupDir 'initialized.flag'}))){[IO.File]::WriteAllText($(if($initializedFlag){$initializedFlag}else{Join-Path $backupDir 'initialized.flag'}),'2')}
 }
 function MigrateLegacy{
  if(!(Test-Path -LiteralPath $legacyJournal)){return}
@@ -881,7 +887,7 @@ public static class BrabusDwm {
 <Style TargetType="ScrollBar"><Setter Property="Background" Value="#0D1725"/><Setter Property="Width" Value="13"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="#0D1725"><Track x:Name="PART_Track" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Background="Transparent" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="#3B5A72" CornerRadius="4" Margin="2"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Background="Transparent" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton></Track></Grid><ControlTemplate.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="13"/></Trigger></Style.Triggers></Style>
 </Window.Resources>
 <Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-<Border Background="#111F32" CornerRadius="12" Padding="17"><DockPanel><StackPanel DockPanel.Dock="Right" VerticalAlignment="Center"><TextBlock Text="CONTROL CENTER  /  1.7" Foreground="#5CE1F5" FontWeight="Bold"/><TextBlock Text="LOCAL  |  NO AI  |  NO RESIDENT PROCESS" FontSize="11" Foreground="#9EB5CC"/></StackPanel><StackPanel><TextBlock Text="BRABUS / UTIL" FontSize="34" Foreground="#43D7E8" FontWeight="Bold"/><TextBlock Text="ONE-SHOT DEBLOATER  /  SCAN - APPLY - VERIFY - CLOSE" Foreground="#9EB5CC"/><TextBlock Name="Hardware" Foreground="#DCE9FC" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></DockPanel></Border>
+<Border Background="#111F32" CornerRadius="12" Padding="17"><DockPanel><StackPanel DockPanel.Dock="Right" VerticalAlignment="Center"><TextBlock Text="CONTROL CENTER  /  1.7 NETWORK" Foreground="#5CE1F5" FontWeight="Bold"/><TextBlock Text="LOCAL  |  NO AI  |  NO RESIDENT PROCESS" FontSize="11" Foreground="#9EB5CC"/></StackPanel><StackPanel><TextBlock Text="BRABUS / UTIL" FontSize="34" Foreground="#43D7E8" FontWeight="Bold"/><TextBlock Text="ONE-SHOT DEBLOATER  /  SCAN - APPLY - VERIFY - CLOSE" Foreground="#9EB5CC"/><TextBlock Name="Hardware" Foreground="#DCE9FC" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></DockPanel></Border>
 <Grid Grid.Row="1" Margin="0,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
 <Border Background="#122236" CornerRadius="8" Padding="12" Margin="0,0,6,0"><StackPanel><TextBlock Text="CATALOGO COMPATIBILE" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Total" Text="--" FontSize="24" FontWeight="Bold" Foreground="#43D7E8"/></StackPanel></Border>
 <Border Grid.Column="1" Background="#122236" CornerRadius="8" Padding="12" Margin="3,0"><StackPanel><TextBlock Text="MARGINI DI INTERVENTO" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Available" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F4C77B"/></StackPanel></Border>
@@ -892,7 +898,7 @@ public static class BrabusDwm {
 <TextBlock Text="01 / PRESET" Foreground="#43D7E8" FontWeight="Bold" Margin="4,4,0,8"/>
 <UniformGrid Columns="2"><UniformGrid.Resources><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="5,4"/><Setter Property="Margin" Value="2"/><Setter Property="FontSize" Value="11"/></Style></UniformGrid.Resources><Button Name="Scan" Content="ANALIZZA PC"/><Button Name="Safe" Content="SAFE"/><Button Name="Gaming" Content="GAMING"/><Button Name="Ultimate" Content="ULTIMATE"/><Button Name="SelectAll" Content="SELEZIONA TUTTO" Background="#0C7189"/><Button Name="Clear" Content="DESELEZIONA TUTTO"/><Button Name="Export" Content="ESPORTA PRESET"/><Button Name="Import" Content="IMPORTA PRESET"/></UniformGrid>
 <TextBlock Text="02 / CATEGORIE TWEAK" Foreground="#43D7E8" FontWeight="Bold" Margin="4,9,0,5"/><ListBox Name="CategoryList" Margin="1,0,1,3" Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"><ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ListBox.ItemsPanel><ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Margin" Value="2"/><Setter Property="Padding" Value="5,3"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="cat" Background="#17283C" BorderBrush="#29445F" BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="cat" Property="Background" Value="#126480"/><Setter TargetName="cat" Property="BorderBrush" Value="#43D7E8"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="cat" Property="BorderBrush" Value="#43D7E8"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle></ListBox></StackPanel><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel><TextBlock Text="03 / STRUMENTI" Foreground="#43D7E8" FontWeight="Bold" Margin="4,16,0,8"/>
-<Button Name="Debloat" Content="RIMUOVI APP OPZIONALI"/><Button Name="Apps" Content="APP INSTALLATE"/><Button Name="Startup" Content="AVVIO WINDOWS"/><Button Name="Power" Content="PIANI ENERGETICI"/><Button Name="Storage" Content="ARCHIVIAZIONE"/><Button Name="Graphics" Content="GRAFICA WINDOWS"/><Button Name="GpuApp" Content="GPU PER GIOCO"/><Button Name="Software" Content="SOFTWARE CENTER"/><Button Name="Features" Content="FUNZIONALITA WINDOWS"/><Button Name="Services" Content="SERVIZI WINDOWS"/><Button Name="Diag" Content="DIAGNOSTICA AVANZATA"/><Button Name="Updates" Content="WINDOWS UPDATE"/><Button Name="Audio" Content="AUDIO E NOTIFICHE"/><Button Name="Network" Content="RETE / DNS"/>
+<Button Name="Debloat" Content="RIMUOVI APP OPZIONALI"/><Button Name="Apps" Content="APP INSTALLATE"/><Button Name="Startup" Content="AVVIO WINDOWS"/><Button Name="Power" Content="PIANI ENERGETICI"/><Button Name="Storage" Content="ARCHIVIAZIONE"/><Button Name="Graphics" Content="GRAFICA WINDOWS"/><Button Name="GpuApp" Content="GPU PER GIOCO"/><Button Name="Software" Content="SOFTWARE CENTER"/><Button Name="Features" Content="FUNZIONALITA WINDOWS"/><Button Name="Services" Content="SERVIZI WINDOWS"/><Button Name="Diag" Content="DIAGNOSTICA AVANZATA"/><Button Name="Updates" Content="WINDOWS UPDATE"/><Button Name="Audio" Content="AUDIO E NOTIFICHE"/><Button Name="Network" Content="NETWORK CENTER" Background="#0C7189"/>
 <TextBlock Text="04 / RIPRISTINO" Foreground="#43D7E8" FontWeight="Bold" Margin="4,16,0,8"/>
 <Button Name="Backup" Content="BACKUP &amp; RECOVERY CENTER"/><Button Name="Undo" Content="RIPRISTINA TUTTI I TWEAK"/><Button Name="Files" Content="LOG E REPORT"/>
 <TextBlock Text="Defender, firewall, UAC e aggiornamenti intatti." Foreground="#73E6AE" TextWrapping="Wrap" Margin="4,12,0,0" FontSize="12"/>
@@ -911,12 +917,28 @@ public static class BrabusDwm {
 <DataGrid Name="PageGrid" IsReadOnly="True" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" EnableRowVirtualization="True"><DataGrid.Columns>
 <DataGridTextColumn Header="Elemento" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="Stato / Valore" Binding="{Binding State}" Width="*"/><DataGridTextColumn Header="Informazioni" Binding="{Binding Detail}" Width="3*"/>
 </DataGrid.Columns></DataGrid>
-</DockPanel></TabItem></TabControl></Grid>
+</DockPanel></TabItem><TabItem Header="NETWORK CENTER"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="9">
+<Border CornerRadius="10" Padding="15" Margin="0,0,0,9"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#173C55" Offset="0"/><GradientStop Color="#102031" Offset="1"/></LinearGradientBrush></Border.Background><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Text="CLOUDFLARE  /  HTTPS + ICMP" FontSize="11" Foreground="#AFC9DF" VerticalAlignment="Center"/><TextBlock Text="NETWORK / SPEED LAB" FontSize="25" FontWeight="Bold" Foreground="#43D7E8"/></DockPanel><TextBlock Name="NetLink" Text="--" Foreground="#73E6AE" Margin="0,5,0,3"/><TextBlock Name="NetAdmin" FontSize="11" Foreground="#AFC9DF"/><TextBlock Text="Test stimato, singola connessione. Circa 30 MB. Nessuna modifica automatica." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,0"/></StackPanel></Border>
+<UniformGrid Columns="2" Margin="0,0,0,6">
+<Border Background="#12263A" CornerRadius="8" Padding="13" Margin="0,0,4,0"><StackPanel><TextBlock Text="DOWNLOAD / Mbps" Foreground="#AFC9DF" FontSize="12"/><TextBlock Name="NetDown" Text="--" FontSize="42" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Text="Velocita ricezione HTTPS" FontSize="11"/></StackPanel></Border>
+<Border Background="#12263A" CornerRadius="8" Padding="13" Margin="4,0,0,0"><StackPanel><TextBlock Text="UPLOAD / Mbps" Foreground="#AFC9DF" FontSize="12"/><TextBlock Name="NetUp" Text="--" FontSize="42" FontWeight="Bold" Foreground="#A9C9FA"/><TextBlock Text="Velocita invio HTTPS" FontSize="11"/></StackPanel></Border>
+</UniformGrid>
+<UniformGrid Columns="3" Margin="0,0,0,6">
+<Border Background="#12263A" CornerRadius="8" Padding="10" Margin="0,0,3,0"><StackPanel><TextBlock Text="PING / ms" FontSize="11"/><TextBlock Name="NetPing" Text="--" FontSize="26" Foreground="#73E6AE" FontWeight="Bold"/></StackPanel></Border>
+<Border Background="#12263A" CornerRadius="8" Padding="10" Margin="3,0"><StackPanel><TextBlock Text="JITTER / ms" FontSize="11"/><TextBlock Name="NetJitter" Text="--" FontSize="26" Foreground="#F4C77B" FontWeight="Bold"/></StackPanel></Border>
+<Border Background="#12263A" CornerRadius="8" Padding="10" Margin="3,0,0,0"><StackPanel><TextBlock Text="LOSS / %" FontSize="11"/><TextBlock Name="NetLoss" Text="--" FontSize="26" Foreground="#A9C9FA" FontWeight="Bold"/></StackPanel></Border>
+</UniformGrid>
+<Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
+<Border Background="#14283B" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><TextBlock Text="DNS ATTUALI / INTERFACCE" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="NetInfo" Text="--" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Border>
+<TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Seleziona una voce. Driver: solo modifiche compatibili, con backup separato e riavvio manuale. Le voci browser sono collegate al catalogo originale." TextWrapping="Wrap" Foreground="#AFC9DF"/>
+<DataGrid Name="NetGrid" IsReadOnly="True" SelectionMode="Single" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" Width="*"/></DataGrid.Columns></DataGrid>
+<TextBlock Name="NetDetail" Text="Seleziona una voce per dettagli." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,5"/><WrapPanel><Button Name="NetApply" Content="APPLICA TWEAK" Background="#0C7189"/><Button Name="NetRestore" Content="RIPRISTINA DRIVER" IsEnabled="False"/><TextBlock Name="NetBackupCount" Text="Backup rete: --" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
+</StackPanel></ScrollViewer></TabItem></TabControl></Grid>
 <Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="10" Margin="0,10,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
 </Grid></Window>
 '@
 $w=[Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
-if($UiTest){if(!$w.FindName('Grid') -or !$w.FindName('Debloat')){throw 'GUI test failed'}; foreach($id in @('GpuApp','Software','Features','Services','Diag','Updates','Audio','SelectAll','CategoryList','PageGrid','PageAction','PageRefresh','SelectPage','Network','Pending','PWUHigh','PWUMedium','PWULow','StateAvailable','FilterCount','ResetFilters')){if(!$w.FindName($id)){throw ('Missing GUI control: '+$id)}}}
+if($UiTest){if(!$w.FindName('Grid') -or !$w.FindName('Debloat')){throw 'GUI test failed'}; foreach($id in @('GpuApp','Software','Features','Services','Diag','Updates','Audio','SelectAll','CategoryList','PageGrid','PageAction','PageRefresh','SelectPage','Network','NetStart','NetGrid','NetDown','NetTrace','NetRestore','Pending','PWUHigh','PWUMedium','PWULow','StateAvailable','FilterCount','ResetFilters')){if(!$w.FindName($id)){throw ('Missing GUI control: '+$id)}}}
 $grid=$w.FindName('Grid');$status=$w.FindName('Status')
 function SetDarkChrome($win){
  try{
@@ -1156,11 +1178,194 @@ $grid.AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.R
 $w.FindName('Filter').Add_TextChanged({FilterRows})
 $w.FindName('Export').Add_Click({Guard {ExportProfile}})
 $w.FindName('Import').Add_Click({Guard {ImportProfile}})
-foreach($id in @('Power','Storage','Graphics','GpuApp','Software','Features','Services','Diag','Updates','Audio','Apps','Debloat','Startup','Files','Backup','Network')){
+# Network Center (same window and folder).
+function NetworkDefinitions {
+ @{
+  '*RSS'=@('Receive Side Scaling', '1','Medium','Distribuisce ricezione tra CPU; utile per throughput elevato.')
+  '*RscIPv4'=@('Receive Segment Coalescing IPv4','1','Medium','Riduce overhead CPU; possibile compromesso latenza.')
+  '*RscIPv6'=@('Receive Segment Coalescing IPv6','1','Medium','Riduce overhead CPU; possibile compromesso latenza.')
+  '*LsoV2IPv4'=@('Large Send Offload IPv4','1','Medium','Offload trasmissione; misura throughput e latenza prima/dopo.')
+  '*LsoV2IPv6'=@('Large Send Offload IPv6','1','Medium','Offload trasmissione; misura throughput e latenza prima/dopo.')
+  '*InterruptModeration'=@('Interrupt Moderation: off','0','Medium','Possibile riduzione latenza, ma aumenta carico CPU; non sempre conviene.')
+  '*EEE'=@('Energy Efficient Ethernet: off','0','Low','Possibile riduzione ritardi di risveglio; aumenta consumo.')
+  '*TCPChecksumOffloadIPv4'=@('TCP checksum IPv4','3','Low','Offload checksum RX/TX; beneficio dipende dal driver.')
+  '*TCPChecksumOffloadIPv6'=@('TCP checksum IPv6','3','Low','Offload checksum RX/TX; beneficio dipende dal driver.')
+  '*UDPChecksumOffloadIPv4'=@('UDP checksum IPv4','3','Low','Offload checksum RX/TX; beneficio dipende dal driver.')
+  '*UDPChecksumOffloadIPv6'=@('UDP checksum IPv6','3','Low','Offload checksum RX/TX; beneficio dipende dal driver.')
+  '*UsoIPv4'=@('UDP Segmentation Offload IPv4','1','Medium','Riduce overhead CPU per datagrammi grandi; dipende dal traffico.')
+  '*UsoIPv6'=@('UDP Segmentation Offload IPv6','1','Medium','Riduce overhead CPU per datagrammi grandi; dipende dal traffico.')
+  '*PacketCoalescing'=@('Packet Coalescing: off','0','Low','Possibile riduzione ritardo di aggregazione, maggiore carico CPU.')
+  '*SelectiveSuspend'=@('Selective Suspend: off','0','Low','Solo desktop; evita sospensione selettiva della scheda, maggiori consumi.')
+  '*IPChecksumOffloadIPv4'=@('IP checksum IPv4','3','Low','Offload checksum RX/TX; beneficio dipende dal driver.')
+ }
+}
+function NetworkProperty($path,$key){
+ $parts=$path.Split('|');$defs=NetworkDefinitions
+ if($parts.Count -ne 2 -or !$defs.ContainsKey($key)){throw 'Proprieta rete non autorizzata'}
+ $guid=[guid]$parts[1]
+ $adapter=Get-NetAdapter -Physical -ErrorAction Stop|Where-Object {[guid]$_.InterfaceGuid -eq $guid}|Select-Object -First 1
+ if(!$adapter){throw 'Scheda fisica originale non rilevata'}
+ $prop=Get-NetAdapterAdvancedProperty -Name ([WildcardPattern]::Escape($adapter.Name)) -RegistryKeyword $key -ErrorAction Stop|Where-Object RegistryKeyword -eq $key|Select-Object -First 1
+ if(!$prop -or @($prop.RegistryValue).Count -ne 1){throw 'Proprieta non disponibile o formato non supportato'}
+ [pscustomobject]@{Adapter=$adapter;Property=$prop}
+}
+function NetworkRead($path,$key){
+ $p=(NetworkProperty $path $key).Property
+ [pscustomobject]@{Exists=$true;Kind='String';Value=[string]$p.RegistryValue[0]}
+}
+function NetworkWrite($path,$key,$state){
+ if(!(IsElevated)){throw 'Richiede PowerShell come amministratore; non viene elevato automaticamente'}
+ if(!$state.Exists -or $state.Kind -ne 'String'){throw 'Stato rete non valido'}
+ $p=NetworkProperty $path $key
+ if([string]$state.Value -notin @($p.Property.ValidRegistryValues)){throw 'Valore non supportato dal driver'}
+ Set-NetAdapterAdvancedProperty -Name ([WildcardPattern]::Escape($p.Adapter.Name)) -RegistryKeyword $key -RegistryValue @([string]$state.Value) -NoRestart -ErrorAction Stop
+}
+function NetworkCatalog{
+ $defs=NetworkDefinitions
+ foreach($a in @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue)){
+  if($a.Status -ne 'Up'){continue}
+  foreach($p in @(Get-NetAdapterAdvancedProperty -Name ([WildcardPattern]::Escape($a.Name)) -ErrorAction SilentlyContinue)){
+   $key=$p.RegistryKeyword
+   if(!$defs.ContainsKey($key) -or @($p.RegistryValue).Count -ne 1){continue}
+   if($key -in @('*SelectiveSuspend','*PacketCoalescing') -and @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue).Count){continue};$d=$defs[$key];if($d[1] -notin @($p.ValidRegistryValues)){continue}
+   $before=[string]$p.RegistryValue[0]
+   if($before -notin @($p.ValidRegistryValues)){continue}
+   [pscustomobject]@{Name="$($a.Name): $($d[0])";Path="NET|$([guid]$a.InterfaceGuid)";Key=$key;Before=$before;After=$d[1];Status=$(if($before -eq $d[1]){'GIA CONFIGURATO'}else{'DISPONIBILE'});PWU=$d[2];Note=$d[3]+' | Admin richiesto; effetto dopo riavvio scheda/PC.';TargetState=[pscustomobject]@{Exists=$true;Kind='String';Value=[string]$d[1]}}
+  }
+ }
+}
+function WithNetworkJournal([scriptblock]$action){
+ # Separate journal filenames in the existing backup directory: older versions can still read their own backups.
+ $journal=Join-Path $backupDir 'network-active.json'
+ $mirror=Join-Path $backupDir 'network-mirror.json'
+ $legacyJournal=Join-Path $backupDir 'network-legacy.json'
+ $initializedFlag=Join-Path $backupDir 'network-initialized.flag'
+ & $action
+}
+function GetNetworkBackup { @(WithNetworkJournal {ReadJournal}) }
+function GetNetworkRelated {
+ @($script:rows|Where-Object {$_.Category -eq 'Browser' -and $_.Key -in @('BackgroundModeEnabled','StartupBoostEnabled','NetworkPredictionOptions','NewTabPagePrerenderEnabled','SearchSuggestEnabled','AlternateErrorPagesEnabled')})
+}
+function RefreshNetwork {
+ $a=@(Get-NetAdapter -ErrorAction SilentlyContinue|Where-Object Status -eq 'Up')
+ $w.FindName('NetLink').Text=if($a.Count){($a|ForEach-Object {"$($_.Name) | $($_.LinkSpeed)"}) -join '  /  '}else{'Nessuna interfaccia attiva'}
+ $w.FindName('NetInfo').Text=(@(Get-DnsClientServerAddress -ErrorAction SilentlyContinue|Where-Object {$_.ServerAddresses -and $_.InterfaceIndex -in $a.ifIndex}|ForEach-Object {"$($_.InterfaceAlias) DNS: "+($_.ServerAddresses -join ', ')}) -join [Environment]::NewLine)
+ $extra=@(Get-NetAdapterStatistics -ErrorAction SilentlyContinue|Where-Object Name -in $a.Name|ForEach-Object {"$($_.Name) | Errori RX/TX: $($_.ReceivedPacketErrors)/$($_.OutboundPacketErrors) | Scarti RX/TX: $($_.ReceivedDiscardedPackets)/$($_.OutboundDiscardedPackets)"})
+ $tcp=Get-NetTCPSetting -SettingName Internet -ErrorAction SilentlyContinue
+ if($tcp){$extra+="TCP autotuning: $($tcp.AutoTuningLevelLocal) | Congestione: $($tcp.CongestionProvider)"}
+ if($extra.Count){$w.FindName('NetInfo').Text+=[Environment]::NewLine+($extra -join [Environment]::NewLine)}
+ $w.FindName('NetGrid').ItemsSource=@(NetworkCatalog)+@(GetNetworkRelated)
+ try{$n=@(GetNetworkBackup);$w.FindName('NetBackupCount').Text="Backup rete: $($n.Count)";$w.FindName('NetRestore').IsEnabled=($n.Count -gt 0)}catch{$w.FindName('NetBackupCount').Text='BACKUP RETE: ERRORE';$w.FindName('NetRestore').IsEnabled=$false}
+ $w.FindName('NetAdmin').Text=if(IsElevated){'ADMIN | modifiche driver consentite'}else{'UTENTE | test e tweak browser; driver richiede admin'}
+}
+function ApplyNetworkSelected{
+ $r=$w.FindName('NetGrid').SelectedItem;if(!$r){return}
+ if($r.Status -ne 'DISPONIBILE'){return}
+ if($r.Path.StartsWith('NET|')){
+  if(!(IsElevated)){throw 'Per questo tweak riapri BRABUS UTIL da PowerShell avviato come amministratore.'}
+  if(!(ConfirmDark 'Modifica scheda di rete' ("$($r.Name): $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note+[Environment]::NewLine+'Backup prima della scrittura. Nessun riavvio automatico; riavvia il PC quando ti conviene. Non garantisce ping/FPS migliori.'))){return}
+  WithNetworkJournal {ApplyValue $r}
+ }else{
+  if(!(ConfirmDark 'Modifica browser' ("$($r.Name): $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note))){return}
+  ApplyValue $r
+  RefreshRows
+ }
+ RefreshNetwork
+ $status.Text='Valore scritto e verificato. Riavvio manuale del browser o PC se necessario.'
+}
+function RestoreNetwork{
+ if(!(IsElevated)){throw 'Ripristino driver: avvia PowerShell come amministratore'}
+ $records=@(GetNetworkBackup);if(!$records.Count){return}
+ if(!(ConfirmDark 'Ripristino rete' ("Ripristinare tutte le $($records.Count) modifiche driver gestite? Nessun riavvio automatico."))){return}
+ WithNetworkJournal {RestoreRecords @($records.Id)}
+ RefreshNetwork
+ $status.Text='Ripristino rete verificato; riavvio manuale necessario.'
+}
+function MeasureConnection([hashtable]$state,[int]$downBytes=25000000,[int]$upBytes=5000000){
+ # Only random synthetic bytes and public test requests; no files or personal reports uploaded.
+ $ErrorActionPreference='Stop'
+ $state.Stage='LATENZA';$state.Progress=5;$cancel=$state.CancelSource;if(!$cancel){$cancel=New-Object Threading.CancellationTokenSource};$token=$cancel.Token
+ $samples=@();$lost=0;$ping=New-Object Net.NetworkInformation.Ping
+ try{for($i=0;$i -lt 10;$i++){$token.ThrowIfCancellationRequested();try{$r=$ping.Send('1.1.1.1',1000);if($r.Status -eq 'Success'){$samples+= [double]$r.RoundtripTime}else{$lost++}}catch{$lost++};$state.Samples=@($samples);$state.Progress=5+($i+1)*3;Start-Sleep -Milliseconds 100}}finally{$ping.Dispose()}
+ $state.Loss=$lost*10
+ if($samples.Count){$state.Ping=[math]::Round(($samples|Measure-Object -Average).Average,1)}
+ if($samples.Count -ge 2){$delta=@(for($i=1;$i -lt $samples.Count;$i++){[math]::Abs($samples[$i]-$samples[$i-1])});$state.Jitter=[math]::Round(($delta|Measure-Object -Average).Average,1)}
+ Add-Type -AssemblyName System.Net.Http
+ $client=New-Object Net.Http.HttpClient
+ $client.Timeout=[TimeSpan]::FromSeconds(35)
+ try{
+  $state.Stage='DOWNLOAD';$state.Progress=38;$cancel.CancelAfter(35000)
+  $url="https://speed.cloudflare.com/__down?bytes=$downBytes&nonce=$([guid]::NewGuid().ToString('N'))"
+  $sw=[Diagnostics.Stopwatch]::StartNew()
+  $resp=$client.GetAsync($url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$token).GetAwaiter().GetResult()
+  try{
+   $null=$resp.EnsureSuccessStatusCode();$stream=$resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+   try{$buf=New-Object byte[] 65536;$n=0L;while(($read=$stream.ReadAsync($buf,0,$buf.Length,$token).GetAwaiter().GetResult()) -gt 0){$n+=$read;if($n -gt $downBytes){throw 'Risposta download oltre limite'};$state.Progress=[math]::Min(70,38+32*$n/$downBytes);if($sw.Elapsed.TotalSeconds -gt 35){throw 'Timeout download'}}}finally{$stream.Dispose()}
+   $sw.Stop();if($n -ne $downBytes){throw "Download incompleto: $n byte"}
+   $state.Down=[math]::Round($n*8/1e6/[math]::Max(.001,$sw.Elapsed.TotalSeconds),2)
+  }finally{$resp.Dispose()}
+  $state.Stage='UPLOAD';$state.Progress=75;$cancel.CancelAfter(35000)
+  $bytes=New-Object byte[] $upBytes
+  $rng=[Security.Cryptography.RandomNumberGenerator]::Create();try{$rng.GetBytes($bytes)}finally{$rng.Dispose()}
+  $content=New-Object Net.Http.ByteArrayContent -ArgumentList (,$bytes)
+  try{$sw.Restart();$resp=$client.PostAsync('https://speed.cloudflare.com/__up',$content,$token).GetAwaiter().GetResult();try{$null=$resp.EnsureSuccessStatusCode();$sw.Stop();$state.Up=[math]::Round($upBytes*8/1e6/[math]::Max(.001,$sw.Elapsed.TotalSeconds),2)}finally{$resp.Dispose()}}finally{$content.Dispose()}
+  $state.Stage='COMPLETATO';$state.Progress=100
+ }finally{$client.Dispose()}
+}
+$script:netJob=$null;$script:netState=$null
+function RenderNetworkTest($s){
+ foreach($pair in @(@('NetDown','Down'),@('NetUp','Up'),@('NetPing','Ping'),@('NetJitter','Jitter'),@('NetLoss','Loss'))){
+  $v=$s[$pair[1]];$w.FindName($pair[0]).Text=if($null -ne $v){[string]$v}else{'--'}
+ }
+ $w.FindName('NetProgress').Value=[double]$s.Progress
+ $w.FindName('NetStage').Text=[string]$s.Stage
+ $pts=New-Object Windows.Media.PointCollection
+ $arr=@($s.Samples)
+ if($arr.Count -gt 0){$max=[math]::Max([double]1,[double]($arr|Measure-Object -Maximum).Maximum);for($i=0;$i -lt $arr.Count;$i++){$pts.Add([Windows.Point]::new((10+280*$i/[math]::Max(1,$arr.Count-1)),(75-65*$arr[$i]/$max)))}}
+ $w.FindName('NetTrace').Points=$pts
+}
+function StopNetworkTest {
+ if($script:netJob){
+  try{$script:netState.CancelSource.Cancel();$script:netJob.PS.Stop()}catch{}
+  $script:netJob.PS.Dispose();if($script:netState.CancelSource){$script:netState.CancelSource.Dispose()};$script:netJob=$null
+ }
+ $script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false
+}
+function StartNetworkTest {
+ if($script:netJob){return}
+ if(!(ConfirmDark 'Speed test Internet' 'Test verso Cloudflare (circa 30 MB di traffico + overhead); misura una singola connessione HTTPS, non un test multi-stream. Ping ICMP separato a 1.1.1.1. Nessun dato personale inviato esplicitamente; il servizio vede IP e traffico. Avviare?')){return}
+ $script:netState=[hashtable]::Synchronized(@{CancelSource=(New-Object Threading.CancellationTokenSource);Stage='AVVIO';Progress=0;Samples=@();Down=$null;Up=$null;Ping=$null;Jitter=$null;Loss=$null})
+ RenderNetworkTest $script:netState
+ $ps=[powershell]::Create()
+ $fn=(Get-Command MeasureConnection).ScriptBlock.ToString()
+ $null=$ps.AddScript($fn).AddArgument($script:netState)
+ $script:netJob=@{PS=$ps;Async=$ps.BeginInvoke()}
+ $w.FindName('NetStart').IsEnabled=$false;$w.FindName('NetCancel').IsEnabled=$true;$script:netTimer.Start()
+}
+$script:netTimer=New-Object Windows.Threading.DispatcherTimer
+$script:netTimer.Interval=[TimeSpan]::FromMilliseconds(300)
+$script:netTimer.Add_Tick({
+ if(!$script:netJob){return}
+ RenderNetworkTest $script:netState
+ if($script:netJob.Async.IsCompleted){
+  try{$null=$script:netJob.PS.EndInvoke($script:netJob.Async);if($script:netJob.PS.HadErrors){throw ($script:netJob.PS.Streams.Error|Out-String)};RenderNetworkTest $script:netState}catch{$w.FindName('NetStage').Text=if($script:netState.Stage -eq 'ANNULLAMENTO'){'ANNULLATO'}else{"ERRORE: $($_.Exception.Message)"}}
+  $script:netJob.PS.Dispose();if($script:netState.CancelSource){$script:netState.CancelSource.Dispose()};$script:netJob=$null;$script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false
+ }
+})
+$w.FindName('NetStart').Add_Click({Guard {StartNetworkTest}})
+$w.FindName('NetCancel').Add_Click({Guard {if($script:netJob){$script:netState.Stage='ANNULLAMENTO';$script:netState.CancelSource.Cancel();$w.FindName('NetCancel').IsEnabled=$false}}})
+$w.FindName('NetRefresh').Add_Click({Guard {RefreshNetwork}})
+$w.FindName('NetFlushDNS').Add_Click({Guard {if(ConfirmDark 'Cache DNS' 'Svuotare la cache DNS locale? Non cambia i server DNS e non promette ping inferiore. La cache verra ricostruita automaticamente.'){Clear-DnsClientCache -ErrorAction Stop;$status.Text='Cache DNS svuotata'}}})
+$w.FindName('NetApply').Add_Click({Guard {ApplyNetworkSelected}})
+$w.FindName('NetRestore').Add_Click({Guard {RestoreNetwork}})
+$w.FindName('NetGrid').Add_SelectionChanged({$r=$w.FindName('NetGrid').SelectedItem;if($r){$w.FindName('NetDetail').Text="$($r.Name) | $($r.Before) -> $($r.After) | PWU $($r.PWU)"+[Environment]::NewLine+$r.Note}})
+$w.Add_Closed({StopNetworkTest})
+
+foreach($id in @('Power','Storage','Graphics','GpuApp','Software','Features','Services','Diag','Updates','Audio','Apps','Debloat','Startup','Files','Backup')){
  $btn=$w.FindName($id);$btn.Tag=$id
  $btn.Add_Click({param($sender,$eventArgs) Guard {OpenPage ([string]$sender.Tag)}})
 }
-$w.FindName('Safe').Add_Click({SelectPreset 'Safe'})
+$w.FindName('Network').Add_Click({Guard {RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4}});$w.FindName('Safe').Add_Click({SelectPreset 'Safe'})
 $w.FindName('Gaming').Add_Click({SelectPreset 'Gaming'})
 $w.FindName('Ultimate').Add_Click({SelectPreset 'Ultimate'})
 $w.FindName('SelectAll').Add_Click({Guard {
@@ -1241,11 +1446,17 @@ if($UiTest){
  ShowCategory 'Gaming';if(@($grid.ItemsSource).Count -ne 2){throw 'Category filter failed'}
  $w.FindName('SelectPage').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
  if(!$script:rows[0].Selected -or $script:rows[1].Selected){throw 'Visible selection failed'}
- foreach($id in @('Apps','Debloat','Startup','Power','Storage','Graphics','GpuApp','Software','Features','Services','Updates','Audio','Network','Diag','Backup','Files')){
+ foreach($id in @('Apps','Debloat','Startup','Power','Storage','Graphics','GpuApp','Software','Features','Services','Updates','Audio','Diag','Backup','Files')){
   $w.FindName($id).RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
   if($script:page -ne $id -or $w.FindName('Tabs').SelectedIndex -ne 3 -or $status.Text -like 'ERRORE:*'){throw "Page navigation failed: $id | $($status.Text)"}
   Write-Output ("PAGE OK: "+$id+" ("+$script:pageRows.Count+")")
  }
+ $w.FindName('Network').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if($w.FindName('Tabs').SelectedIndex -ne 4 -or $status.Text -like 'ERRORE:*'){throw "Network page failed: $($status.Text)"}
+ $mock=@{Stage='TEST';Progress=100;Samples=@(10,13,12,15);Down=100.5;Up=20;Ping=12.5;Jitter=2;Loss=0}
+ RenderNetworkTest $mock
+ if($w.FindName('NetDown').Text -ne '100.5' -or $w.FindName('NetTrace').Points.Count -ne 4){throw 'Network HUD render failed'}
+ Write-Output ("NETWORK UI OK: "+@($w.FindName('NetGrid').ItemsSource).Count+" compatible rows")
  $w.Close();Write-Output 'UI TEST OK - PWU, combined filters, token search, separate counters, category filters, select visible, all integrated pages';exit 0
 }
 $cpu=(Get-CimInstance Win32_Processor|Select-Object -First 1).Name
