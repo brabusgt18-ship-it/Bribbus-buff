@@ -1315,7 +1315,7 @@ function RefreshNetwork {
 }
 function UpdateNetworkCount{
  $n=@($script:netRows|Where-Object {$_.Selected -and $_.CanSelect}).Count
- $w.FindName('NetSelectedCount').Text="$n selezionati"
+ $w.FindName('NetSelectedCount').Text="$n selezionati";UpdateApplyContext
 }
 function SelectNetworkAll([bool]$value){
  foreach($r in @($script:netRows)){$r.Selected=($value -and $r.CanSelect)}
@@ -1455,7 +1455,7 @@ function StopNetworkTest {
   try{$script:netState.CancelSource.Cancel();$script:netJob.PS.Stop()}catch{}
   $script:netJob.PS.Dispose();if($script:netState.CancelSource){$script:netState.CancelSource.Dispose()};$script:netJob=$null
  }
- $script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false
+ $script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false;UpdateApplyContext
 }
 function StartNetworkTest {
  if($script:netJob){return}
@@ -1466,7 +1466,7 @@ function StartNetworkTest {
  $fn=(Get-Command MeasureConnection).ScriptBlock.ToString()
  $null=$ps.AddScript($fn).AddArgument($script:netState)
  $script:netJob=@{PS=$ps;Async=$ps.BeginInvoke()}
- $w.FindName('NetStart').IsEnabled=$false;$w.FindName('NetCancel').IsEnabled=$true;$script:netTimer.Start()
+ $w.FindName('NetStart').IsEnabled=$false;$w.FindName('NetCancel').IsEnabled=$true;$script:netTimer.Start();UpdateApplyContext
 }
 $script:netTimer=New-Object Windows.Threading.DispatcherTimer
 $script:netTimer.Interval=[TimeSpan]::FromMilliseconds(300)
@@ -1475,13 +1475,30 @@ $script:netTimer.Add_Tick({
  RenderNetworkTest $script:netState
  if($script:netJob.Async.IsCompleted){
   try{$null=$script:netJob.PS.EndInvoke($script:netJob.Async);if($script:netJob.PS.HadErrors){throw ($script:netJob.PS.Streams.Error|Out-String)};RenderNetworkTest $script:netState;try{if($script:netState.NetworkConfig -ne (GetNetworkFingerprint)){$script:netState.NetworkConfig="ND";$script:netState.Stage="PARZIALE | configurazione cambiata durante il test"};SaveSpeedResult $script:netState;RefreshSpeedHistory}catch{$status.Text="Cronologia non salvata: $($_.Exception.Message)"}}catch{$w.FindName('NetStage').Text=if($script:netState.Stage -eq 'ANNULLAMENTO'){'ANNULLATO'}else{"ERRORE: $($_.Exception.Message)"}}
-  $script:netJob.PS.Dispose();if($script:netState.CancelSource){$script:netState.CancelSource.Dispose()};$script:netJob=$null;$script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false
+  $script:netJob.PS.Dispose();if($script:netState.CancelSource){$script:netState.CancelSource.Dispose()};$script:netJob=$null;$script:netTimer.Stop();$w.FindName('NetStart').IsEnabled=$true;$w.FindName('NetCancel').IsEnabled=$false;UpdateApplyContext
  }
 })
 $w.FindName('NetHistory').Add_Click({Guard {RefreshSpeedHistory;$w.FindName('Tabs').SelectedIndex=5}})
 $w.FindName('SpeedHistoryBack').Add_Click({$w.FindName('Tabs').SelectedIndex=4})
 $w.FindName('SpeedHistoryRefresh').Add_Click({Guard {RefreshSpeedHistory}})
-$w.FindName('Tabs').Add_SelectionChanged({param($sender,$args)if($args.Source -eq $sender -and $sender.SelectedIndex -eq 5){Guard {RefreshSpeedHistory}}})
+function UpdateApplyContext{
+ $tab=$w.FindName('Tabs').SelectedIndex
+ $b=$w.FindName('Apply')
+ if($tab -eq 4){
+  $sel=@($script:netRows|Where-Object {$_.Selected -and $_.CanSelect -and $_.Status -eq 'DISPONIBILE'})
+  $drivers=@($sel|Where-Object {$_.Path -like 'NET|*'}).Count
+  $b.Content="APPLICA TWEAK RETE ($($sel.Count))"
+  $b.IsEnabled=(!$script:netJob -and $sel.Count -gt 0)
+  $b.ToolTip=if($drivers -and !(IsElevated)){'Driver: riapri PowerShell come amministratore; nessuna scrittura senza autorizzazione.'}else{'Applica le voci spuntate nel Network Center'}
+  if($drivers -and !(IsElevated)){$status.Text="RETE: $($sel.Count) selezionati, $drivers richiedono amministratore."}
+  else{$status.Text="RETE: $($sel.Count) tweak selezionati."}
+ }elseif($tab -eq 0){
+  $b.Content='APPLICA MODIFICHE SELEZIONATE';$b.IsEnabled=(!$script:netJob);$b.ToolTip='Applica le voci del catalogo generale'
+ }else{
+  $b.Content='APPLICA MODIFICHE SELEZIONATE';$b.IsEnabled=$false;$b.ToolTip='Apri Impostazioni o Network Center per applicare tweak'
+ }
+}
+$w.FindName('Tabs').Add_SelectionChanged({param($sender,$eventArgs)if($eventArgs.OriginalSource -eq $sender -or $eventArgs.Source -eq $sender){Guard {if($w.FindName('Tabs').SelectedIndex -eq 5){RefreshSpeedHistory};if($w.FindName('Tabs').SelectedIndex -eq 4 -and !$script:netRows){RefreshNetwork};UpdateApplyContext}}})
 $w.FindName('NetStart').Add_Click({Guard {StartNetworkTest}})
 $w.FindName('NetCancel').Add_Click({Guard {if($script:netJob){$script:netState.Stage='ANNULLAMENTO';$script:netState.CancelSource.Cancel();$w.FindName('NetCancel').IsEnabled=$false}}})
 $w.FindName('NetRefresh').Add_Click({Guard {RefreshNetwork}})
@@ -1489,8 +1506,11 @@ $w.FindName('NetFlushDNS').Add_Click({Guard {if(ConfirmDark 'Cache DNS' 'Svuotar
 $w.FindName('NetSelectAll').Add_Click({Guard {SelectNetworkAll $true}})
 $w.FindName('NetClear').Add_Click({Guard {SelectNetworkAll $false}})
 $w.FindName('NetGrid').AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.RoutedEventHandler]{
- param($sender,$args)
- if($args.OriginalSource -is [Windows.Controls.CheckBox]){$null=$w.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background,[Action]{UpdateNetworkCount})}
+ param($sender,$eventArgs)
+ if($eventArgs.OriginalSource -is [Windows.Controls.CheckBox]){
+  $binding=$eventArgs.OriginalSource.GetBindingExpression([Windows.Controls.Primitives.ToggleButton]::IsCheckedProperty)
+  if($binding){$binding.UpdateSource()};UpdateNetworkCount
+ }
 })
 $w.FindName('NetApply').Add_Click({Guard {ApplyNetworkSelected}})
 $w.FindName('NetRestore').Add_Click({Guard {RestoreNetwork}})
@@ -1501,10 +1521,10 @@ foreach($id in @('Power','Storage','Graphics','GpuApp','Software','Features','Se
  $btn=$w.FindName($id);$btn.Tag=$id
  $btn.Add_Click({param($sender,$eventArgs) Guard {OpenPage ([string]$sender.Tag)}})
 }
-$w.FindName('Network').Add_Click({Guard {RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4}});$w.FindName('Safe').Add_Click({SelectPreset 'Safe'})
+$w.FindName('Network').Add_Click({Guard {if(!$script:netRows){RefreshNetwork};$w.FindName('Tabs').SelectedIndex=4;UpdateApplyContext}});$w.FindName('Safe').Add_Click({SelectPreset 'Safe'})
 $w.FindName('Gaming').Add_Click({SelectPreset 'Gaming'})
 $w.FindName('Ultimate').Add_Click({SelectPreset 'Ultimate'})
-$w.FindName('SelectAll').Add_Click({Guard {
+$w.FindName('SelectAll').Add_Click({Guard {if($w.FindName('Tabs').SelectedIndex -eq 4){SelectNetworkAll $true;return}
  $null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true)
  $pending=@(ReadJournal)
  $count=0
@@ -1515,11 +1535,11 @@ $w.FindName('SelectAll').Add_Click({Guard {
  $grid.Items.Refresh()
  if($script:stateFilter -eq 'Selected'){FilterRows};$status.Text="Selezionate $count modifiche disponibili. Incluse opzioni personali: controlla le conseguenze. Nessuna modifica applicata."
 }})
-$w.FindName('Clear').Add_Click({foreach($r in $script:rows){$r.Selected=$false};$grid.Items.Refresh();FilterRows})
+$w.FindName('Clear').Add_Click({if($w.FindName('Tabs').SelectedIndex -eq 4){SelectNetworkAll $false;return};foreach($r in $script:rows){$r.Selected=$false};$grid.Items.Refresh();FilterRows})
 $w.FindName('Scan').Add_Click({Guard {$path=SaveScan;$w.FindName('Report').Text=Get-Content $path -Raw;RefreshRows;$w.FindName('Tabs').SelectedIndex=1;$status.Text="Report: $path"}})
 
 $w.FindName('Undo').Add_Click({Guard {if(ConfirmDark 'Ripristino completo' 'Ripristinare tutte le modifiche gestite dal programma? Le modifiche esterne non saranno sovrascritte.'){RestoreAll;RefreshRows;$status.Text='Ripristino verificato'}}})
-$w.FindName('Apply').Add_Click({Guard { if($script:netJob){throw "Attendi la fine dello speed test prima di applicare tweak."}
+$w.FindName('Apply').Add_Click({Guard { if($w.FindName('Tabs').SelectedIndex -eq 4){ApplyNetworkSelected;return};if($w.FindName('Tabs').SelectedIndex -ne 0){return};if($script:netJob){throw "Attendi la fine dello speed test prima di applicare tweak."}
  $null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true);$null=$grid.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
  $sel=@($script:rows|Where-Object Selected)
  if(!$sel.Count){$status.Text='Nessuna modifica selezionata';return}
@@ -1622,6 +1642,20 @@ if($UiTest){
   if($w.FindName('Tabs').SelectedIndex -ne 4){throw 'History back failed'}
   'HISTORY OK - persistence, dedup, partial exclusion, comparison'
  }finally{Remove-Item -LiteralPath $script:speedHistoryPath -ErrorAction SilentlyContinue;$script:speedHistoryPath=$savedHistoryPath}
+ $script:netRows=@([pscustomobject]@{Name='Network fixture';Path='NET|test';Key='test';Selected=$false;CanSelect=$true;Status='DISPONIBILE'})
+ $w.FindName('NetGrid').ItemsSource=$script:netRows
+ $w.FindName('Tabs').SelectedIndex=4
+ $w.FindName('SelectAll').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if(!$script:netRows[0].Selected -or $w.FindName('Apply').Content -ne 'APPLICA TWEAK RETE (1)'){throw 'Network sidebar route failed'}
+ $script:routeTest=0
+ function ApplyNetworkSelected {$script:routeTest=@($script:netRows|Where-Object Selected).Count}
+ $w.FindName('Apply').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if($script:routeTest -ne 1){throw 'Footer network dispatch failed'}
+ $w.FindName('Clear').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if($script:netRows[0].Selected -or $w.FindName('Apply').IsEnabled){throw 'Network clear route failed'}
+ $w.FindName('Tabs').SelectedIndex=0
+ if($w.FindName('Apply').Content -ne 'APPLICA MODIFICHE SELEZIONATE'){throw ("General footer route failed: index="+$w.FindName('Tabs').SelectedIndex+" content="+$w.FindName('Apply').Content+" status="+$status.Text)}
+ 'PASS: footer routes network selection; sidebar select and clear; general context restored'
  Write-Output 'NETWORK MULTISELECT OK'
  Write-Output ("NETWORK UI OK: "+@($w.FindName('NetGrid').ItemsSource).Count+" compatible rows")
  $w.Close();Write-Output 'UI TEST OK - PWU, combined filters, token search, separate counters, category filters, select visible, all integrated pages';exit 0
