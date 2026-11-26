@@ -861,7 +861,7 @@ public static class BrabusDwm {
 }
 "@
 [xml]$x=@'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="BRABUS UTIL | ONE-SHOT DEBLOATER" Width="1280" Height="820" MinWidth="970" MinHeight="650" Background="#080D16" Foreground="#DCE9FC" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="BRABUS UTIL | ONE-SHOT DEBLOATER" Width="1440" Height="900" MinWidth="970" MinHeight="650" Background="#080D16" Foreground="#DCE9FC" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI" FontSize="13">
 <Window.Resources>
 <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#101B2A"/>
 <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#E3ECF9"/>
@@ -884,27 +884,39 @@ public static class BrabusDwm {
 <Style TargetType="DataGridCell"><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="Padding" Value="6"/><Setter Property="BorderThickness" Value="0"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#174862"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></Style.Triggers></Style>
 <Style TargetType="ListBox"><Setter Property="Background" Value="#101B2A"/><Setter Property="Foreground" Value="#E3ECF9"/><Setter Property="BorderBrush" Value="#29445F"/></Style>
 <Style TargetType="ListBoxItem"><Setter Property="Foreground" Value="#E3ECF9"/><Setter Property="Padding" Value="8"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#174862"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></Style.Triggers></Style>
-<Style TargetType="ScrollBar"><Setter Property="Background" Value="#0D1725"/><Setter Property="Width" Value="13"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="#0D1725"><Track x:Name="PART_Track" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Background="Transparent" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="#3B5A72" CornerRadius="4" Margin="2"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Background="Transparent" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton></Track></Grid><ControlTemplate.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="13"/></Trigger></Style.Triggers></Style>
+<Style x:Key="ScrollPageButton" TargetType="RepeatButton"><Setter Property="Focusable" Value="False"/><Setter Property="IsTabStop" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></Setter.Value></Setter></Style>
+<Style TargetType="ScrollBar"><Setter Property="Width" Value="10"/><Setter Property="Background" Value="Transparent"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="Transparent"><Border x:Name="rail" Background="#101C2B" CornerRadius="4" Margin="2,1"/><Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" ViewportSize="{TemplateBinding ViewportSize}" Value="{Binding Value,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton x:Name="pageBack" Style="{StaticResource ScrollPageButton}" Command="ScrollBar.PageUpCommand"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb x:Name="grip" Focusable="False"><Thumb.Template><ControlTemplate TargetType="Thumb"><Grid Background="Transparent"><Border x:Name="pill" Background="#48627A" CornerRadius="4" Margin="2,1"/></Grid><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="pill" Property="Background" Value="#62B9CD"/></Trigger><Trigger Property="IsDragging" Value="True"><Setter TargetName="pill" Property="Background" Value="#43D7E8"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton x:Name="pageNext" Style="{StaticResource ScrollPageButton}" Command="ScrollBar.PageDownCommand"/></Track.IncreaseRepeatButton></Track></Grid><ControlTemplate.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/><Setter TargetName="pageBack" Property="Command" Value="ScrollBar.PageLeftCommand"/><Setter TargetName="pageNext" Property="Command" Value="ScrollBar.PageRightCommand"/><Setter TargetName="rail" Property="Margin" Value="1,2"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="rail" Property="Background" Value="#203348"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="grip" Property="Opacity" Value=".35"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="10"/></Trigger></Style.Triggers></Style>
+<Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="5,2"/><Setter Property="Margin" Value="1"/><Setter Property="FontSize" Value="11"/><Setter Property="MinHeight" Value="21"/></Style>
 </Window.Resources>
-<Grid Margin="18"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-<Border Background="#111F32" CornerRadius="12" Padding="17"><DockPanel><StackPanel DockPanel.Dock="Right" VerticalAlignment="Center"><TextBlock Text="CONTROL CENTER  /  1.7 NETWORK" Foreground="#5CE1F5" FontWeight="Bold"/><TextBlock Text="LOCAL  |  NO AI  |  NO RESIDENT PROCESS" FontSize="11" Foreground="#9EB5CC"/></StackPanel><StackPanel><TextBlock Text="BRABUS / UTIL" FontSize="34" Foreground="#43D7E8" FontWeight="Bold"/><TextBlock Text="ONE-SHOT DEBLOATER  /  SCAN - APPLY - VERIFY - CLOSE" Foreground="#9EB5CC"/><TextBlock Name="Hardware" Foreground="#DCE9FC" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></DockPanel></Border>
-<Grid Grid.Row="1" Margin="0,10"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-<Border Background="#122236" CornerRadius="8" Padding="12" Margin="0,0,6,0"><StackPanel><TextBlock Text="CATALOGO COMPATIBILE" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Total" Text="--" FontSize="24" FontWeight="Bold" Foreground="#43D7E8"/></StackPanel></Border>
-<Border Grid.Column="1" Background="#122236" CornerRadius="8" Padding="12" Margin="3,0"><StackPanel><TextBlock Text="MARGINI DI INTERVENTO" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Available" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F4C77B"/></StackPanel></Border>
-<Border Grid.Column="2" Background="#122236" CornerRadius="8" Padding="12" Margin="6,0,0,0"><StackPanel><TextBlock Text="GIA CONFIGURATI" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Done" Text="--" FontSize="24" FontWeight="Bold" Foreground="#73E6AE"/></StackPanel></Border><Border Grid.Column="3" Background="#122236" CornerRadius="8" Padding="12" Margin="6,0,0,0"><StackPanel><TextBlock Text="RIPRISTINI IN BACKUP" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Pending" Text="--" FontSize="24" FontWeight="Bold" Foreground="#A9C9FA"/></StackPanel></Border>
+<Grid Margin="12"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+<Border Background="#111F32" CornerRadius="12" Padding="10"><DockPanel><StackPanel DockPanel.Dock="Right" VerticalAlignment="Center"><TextBlock Text="CONTROL CENTER  /  1.7 NETWORK" Foreground="#5CE1F5" FontWeight="Bold"/><TextBlock Text="LOCAL  |  NO AI  |  NO RESIDENT PROCESS" FontSize="11" Foreground="#9EB5CC"/></StackPanel><StackPanel><TextBlock Text="BRABUS / UTIL" FontSize="26" Foreground="#43D7E8" FontWeight="Bold"/><TextBlock Text="ONE-SHOT DEBLOATER  /  SCAN - APPLY - VERIFY - CLOSE" Foreground="#9EB5CC"/><TextBlock Name="Hardware" Foreground="#DCE9FC" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></DockPanel></Border>
+<Grid Grid.Row="1" Margin="0,6"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+<Border Background="#122236" CornerRadius="8" Padding="8" Margin="0,0,4,0"><StackPanel><TextBlock Text="CATALOGO COMPATIBILE" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Total" Text="--" FontSize="24" FontWeight="Bold" Foreground="#43D7E8"/></StackPanel></Border>
+<Border Grid.Column="1" Background="#122236" CornerRadius="8" Padding="8" Margin="2,0"><StackPanel><TextBlock Text="MARGINI DI INTERVENTO" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Available" Text="--" FontSize="24" FontWeight="Bold" Foreground="#F4C77B"/></StackPanel></Border>
+<Border Grid.Column="2" Background="#122236" CornerRadius="8" Padding="8" Margin="4,0,0,0"><StackPanel><TextBlock Text="GIA CONFIGURATI" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Done" Text="--" FontSize="24" FontWeight="Bold" Foreground="#73E6AE"/></StackPanel></Border><Border Grid.Column="3" Background="#122236" CornerRadius="8" Padding="8" Margin="4,0,0,0"><StackPanel><TextBlock Text="RIPRISTINI IN BACKUP" Foreground="#9EB5CC" FontSize="11"/><TextBlock Name="Pending" Text="--" FontSize="24" FontWeight="Bold" Foreground="#A9C9FA"/></StackPanel></Border>
 </Grid>
-<Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="295"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-<Border Background="#111F32" CornerRadius="10" Padding="9" Margin="0,0,10,0"><DockPanel><StackPanel DockPanel.Dock="Top">
-<TextBlock Text="01 / PRESET" Foreground="#43D7E8" FontWeight="Bold" Margin="4,4,0,8"/>
-<UniformGrid Columns="2"><UniformGrid.Resources><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="5,4"/><Setter Property="Margin" Value="2"/><Setter Property="FontSize" Value="11"/></Style></UniformGrid.Resources><Button Name="Scan" Content="ANALIZZA PC"/><Button Name="Safe" Content="SAFE"/><Button Name="Gaming" Content="GAMING"/><Button Name="Ultimate" Content="ULTIMATE"/><Button Name="SelectAll" Content="SELEZIONA TUTTO" Background="#0C7189"/><Button Name="Clear" Content="DESELEZIONA TUTTO"/><Button Name="Export" Content="ESPORTA PRESET"/><Button Name="Import" Content="IMPORTA PRESET"/></UniformGrid>
-<TextBlock Text="02 / CATEGORIE TWEAK" Foreground="#43D7E8" FontWeight="Bold" Margin="4,9,0,5"/><ListBox Name="CategoryList" Margin="1,0,1,3" Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"><ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ListBox.ItemsPanel><ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Margin" Value="2"/><Setter Property="Padding" Value="5,3"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="cat" Background="#17283C" BorderBrush="#29445F" BorderThickness="1" CornerRadius="4" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="cat" Property="Background" Value="#126480"/><Setter TargetName="cat" Property="BorderBrush" Value="#43D7E8"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="cat" Property="BorderBrush" Value="#43D7E8"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle></ListBox></StackPanel><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel><TextBlock Text="03 / STRUMENTI" Foreground="#43D7E8" FontWeight="Bold" Margin="4,16,0,8"/>
-<Button Name="Debloat" Content="RIMUOVI APP OPZIONALI"/><Button Name="Apps" Content="APP INSTALLATE"/><Button Name="Startup" Content="AVVIO WINDOWS"/><Button Name="Power" Content="PIANI ENERGETICI"/><Button Name="Storage" Content="ARCHIVIAZIONE"/><Button Name="Graphics" Content="GRAFICA WINDOWS"/><Button Name="GpuApp" Content="GPU PER GIOCO"/><Button Name="Software" Content="SOFTWARE CENTER"/><Button Name="Features" Content="FUNZIONALITA WINDOWS"/><Button Name="Services" Content="SERVIZI WINDOWS"/><Button Name="Diag" Content="DIAGNOSTICA AVANZATA"/><Button Name="Updates" Content="WINDOWS UPDATE"/><Button Name="Audio" Content="AUDIO E NOTIFICHE"/><Button Name="Network" Content="NETWORK CENTER" Background="#0C7189"/>
-<TextBlock Text="04 / RIPRISTINO" Foreground="#43D7E8" FontWeight="Bold" Margin="4,16,0,8"/>
-<Button Name="Backup" Content="BACKUP &amp; RECOVERY CENTER"/><Button Name="Undo" Content="RIPRISTINA TUTTI I TWEAK"/><Button Name="Files" Content="LOG E REPORT"/>
-<TextBlock Text="Defender, firewall, UAC e aggiornamenti intatti." Foreground="#73E6AE" TextWrapping="Wrap" Margin="4,12,0,0" FontSize="12"/>
-</StackPanel></ScrollViewer></DockPanel></Border>
+<Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="336"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+<Border Background="#111F32" CornerRadius="10" Padding="7" Margin="0,0,8,0">
+<ScrollViewer Name="NavScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" PanningMode="VerticalOnly"><StackPanel Name="NavStack" Margin="0,0,3,0">
+<TextBlock Text="01 / PRESET" Foreground="#43D7E8" FontWeight="Bold" Margin="4,2,0,4"/>
+<UniformGrid Name="PresetGrid" Columns="2"><UniformGrid.Resources><Style TargetType="Button" BasedOn="{StaticResource NavButton}"/></UniformGrid.Resources>
+<Button Name="Scan" Content="ANALIZZA PC"/><Button Name="Safe" Content="SAFE"/><Button Name="Gaming" Content="GAMING"/><Button Name="Ultimate" Content="ULTIMATE"/><Button Name="SelectAll" Content="SELEZIONA TUTTO" Background="#0C7189"/><Button Name="Clear" Content="DESELEZIONA TUTTO"/><Button Name="Export" Content="ESPORTA PRESET"/><Button Name="Import" Content="IMPORTA PRESET"/></UniformGrid>
+<TextBlock Text="02 / CATEGORIE TWEAK" Foreground="#43D7E8" FontWeight="Bold" Margin="4,7,0,3"/>
+<ListBox Name="CategoryList" Margin="0" Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False">
+<ListBox.Template><ControlTemplate TargetType="ListBox"><ItemsPresenter/></ControlTemplate></ListBox.Template>
+<ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+<ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" TextAlignment="Center" ToolTip="{Binding}"/></DataTemplate></ListBox.ItemTemplate>
+<ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="Margin" Value="1"/><Setter Property="Padding" Value="3,2"/><Setter Property="MinHeight" Value="21"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="#DCE9FC"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="cat" Background="#17283C" BorderBrush="#29445F" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="cat" Property="Background" Value="#126480"/><Setter TargetName="cat" Property="BorderBrush" Value="#43D7E8"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="cat" Property="BorderBrush" Value="#62B9CD"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="cat" Property="BorderBrush" Value="#5CE1F5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style></ListBox.ItemContainerStyle></ListBox>
+<TextBlock Text="03 / STRUMENTI" Foreground="#43D7E8" FontWeight="Bold" Margin="4,7,0,3"/>
+<UniformGrid Name="ToolGrid" Columns="2"><UniformGrid.Resources><Style TargetType="Button" BasedOn="{StaticResource NavButton}"/></UniformGrid.Resources>
+<Button Name="Debloat" Content="RIMUOVI APP" ToolTip="Rimuovi app opzionali"/><Button Name="Apps" Content="APP INSTALLATE"/><Button Name="Startup" Content="AVVIO WINDOWS"/><Button Name="Power" Content="ENERGIA / CPU" ToolTip="Piani energetici"/><Button Name="Storage" Content="ARCHIVIAZIONE"/><Button Name="Graphics" Content="GRAFICA WINDOWS"/><Button Name="GpuApp" Content="GPU PER GIOCO"/><Button Name="Software" Content="SOFTWARE CENTER"/><Button Name="Features" Content="FUNZIONALITA WIN" ToolTip="Funzionalita Windows"/><Button Name="Services" Content="SERVIZI WINDOWS"/><Button Name="Diag" Content="DIAGNOSTICA" ToolTip="Diagnostica avanzata"/><Button Name="Updates" Content="WINDOWS UPDATE"/><Button Name="Audio" Content="AUDIO E NOTIFICHE"/><Button Name="Network" Content="NETWORK CENTER" Background="#0C7189"/>
+</UniformGrid>
+<TextBlock Text="04 / RIPRISTINO" Foreground="#43D7E8" FontWeight="Bold" Margin="4,7,0,3"/>
+<UniformGrid Name="RecoveryGrid" Columns="2"><UniformGrid.Resources><Style TargetType="Button" BasedOn="{StaticResource NavButton}"/></UniformGrid.Resources><Button Name="Backup" Content="BACKUP / RECOVERY"/><Button Name="Undo" Content="RIPRISTINA TUTTO" ToolTip="Ripristina tutti i tweak del catalogo"/><Button Name="Files" Content="LOG E REPORT"/></UniformGrid>
+<TextBlock Text="Protezione Windows intatta" Foreground="#73E6AE" TextWrapping="Wrap" Margin="4,5,0,2" FontSize="11"/>
+</StackPanel></ScrollViewer></Border>
 <TabControl Grid.Column="1" Name="Tabs"><TabItem Header="IMPOSTAZIONI"><DockPanel Margin="6"><Border DockPanel.Dock="Bottom" Background="#17283C" Padding="12" CornerRadius="6" Margin="0,8,0,0"><TextBlock Name="TweakDetail" Text="Seleziona una voce per vedere i dettagli." TextWrapping="Wrap" MinHeight="45"/></Border><StackPanel DockPanel.Dock="Top" Margin="0,0,0,8"><DockPanel><Button DockPanel.Dock="Right" Name="SelectPage" Content="SELEZIONA VISIBILI"/><TextBlock Name="CategoryTitle" Text="IMPOSTAZIONI / Tutte" FontSize="21" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center"/></DockPanel><TextBlock Text="RICERCA / nome, categoria, stato, descrizione o chiave" Foreground="#9EB5CC" FontSize="11"/><TextBox Name="Filter" Margin="0,4,0,5"/>
-<WrapPanel Margin="0,0,0,3"><TextBlock Text="PWU" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center" Margin="0,0,6,0"/><Button Name="PWUAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="PWULow" Content="Low" Padding="8,4" Margin="2"/><Button Name="PWUMedium" Content="Medium" Padding="8,4" Margin="2"/><Button Name="PWUHigh" Content="High" Padding="8,4" Margin="2"/><TextBlock Text="STATO" Foreground="#9EB5CC" VerticalAlignment="Center" Margin="10,0,5,0"/><Button Name="StateAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="StateAvailable" Content="Disponibili" Padding="8,4" Margin="2"/><Button Name="StateDone" Content="Configurati" Padding="8,4" Margin="2"/><Button Name="StateSelected" Content="Selezionati" Padding="8,4" Margin="2"/><Button Name="ResetFilters" Content="RESET" Padding="8,4" Margin="2"/></WrapPanel><DockPanel><TextBlock Name="FilterCount" Foreground="#AFC9DF" VerticalAlignment="Center" DockPanel.Dock="Right"/><TextBlock Text="PWU: impatto potenziale, non benchmark. Clicca la colonna per ordinare." Foreground="#9EB5CC" FontSize="11" TextWrapping="Wrap"/></DockPanel></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTemplateColumn Header="PWU" SortMemberPath="PWURank" CanUserSort="True" IsReadOnly="True" Width="78"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="4" Padding="4,2" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding PWUReason}"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#28394C"/><Style.Triggers><DataTrigger Binding="{Binding PWU}" Value="Medium"><Setter Property="Background" Value="#78521D"/></DataTrigger><DataTrigger Binding="{Binding PWU}" Value="High"><Setter Property="Background" Value="#175A46"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding PWU}" FontWeight="SemiBold" FontSize="11" Foreground="#F2F6FC"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="230"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="100"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="100"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" IsReadOnly="True" Width="135"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CONTROL CENTER"><DockPanel Margin="8">
+<WrapPanel Margin="0,0,0,3"><TextBlock Text="PWU" FontWeight="Bold" Foreground="#43D7E8" VerticalAlignment="Center" Margin="0,0,6,0"/><Button Name="PWUAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="PWULow" Content="Low" Padding="8,4" Margin="2"/><Button Name="PWUMedium" Content="Medium" Padding="8,4" Margin="2"/><Button Name="PWUHigh" Content="High" Padding="8,4" Margin="2"/><TextBlock Text="STATO" Foreground="#9EB5CC" VerticalAlignment="Center" Margin="10,0,5,0"/><Button Name="StateAll" Content="Tutti" Padding="8,4" Margin="2"/><Button Name="StateAvailable" Content="Disponibili" Padding="8,4" Margin="2"/><Button Name="StateDone" Content="Configurati" Padding="8,4" Margin="2"/><Button Name="StateSelected" Content="Selezionati" Padding="8,4" Margin="2"/><Button Name="ResetFilters" Content="RESET" Padding="8,4" Margin="2"/></WrapPanel><DockPanel><TextBlock Name="FilterCount" Foreground="#AFC9DF" VerticalAlignment="Center" DockPanel.Dock="Right"/><TextBlock Text="PWU: impatto potenziale, non benchmark. Clicca la colonna per ordinare." Foreground="#9EB5CC" FontSize="11" TextWrapping="Wrap"/></DockPanel></StackPanel><DataGrid Name="Grid" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="46"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Categoria" Binding="{Binding Category}" IsReadOnly="True" Width="90"/><DataGridTemplateColumn Header="PWU" SortMemberPath="PWURank" CanUserSort="True" IsReadOnly="True" Width="78"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border CornerRadius="4" Padding="4,2" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="{Binding PWUReason}"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="#28394C"/><Style.Triggers><DataTrigger Binding="{Binding PWU}" Value="Medium"><Setter Property="Background" Value="#78521D"/></DataTrigger><DataTrigger Binding="{Binding PWU}" Value="High"><Setter Property="Background" Value="#175A46"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding PWU}" FontWeight="SemiBold" FontSize="11" Foreground="#F2F6FC"/></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Modifica" Binding="{Binding Name}" IsReadOnly="True" Width="2*" MinWidth="155"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="85"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" IsReadOnly="True" Width="115"/><DataGridTextColumn Header="Spiegazione" Binding="{Binding Note}" IsReadOnly="True" Width="3*" MinWidth="115"/></DataGrid.Columns></DataGrid></DockPanel></TabItem><TabItem Header="REPORT PC"><TextBox Name="Report" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CHANGE LOG"><TextBox Name="History" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/></TabItem><TabItem Header="CONTROL CENTER"><DockPanel Margin="8">
 <Border DockPanel.Dock="Top" Background="#14283B" Padding="16" CornerRadius="8" Margin="0,0,0,10"><StackPanel>
 <TextBlock Name="PageTitle" Text="CONTROL CENTER" FontSize="26" FontWeight="Bold" Foreground="#43D7E8"/>
 <TextBlock Name="PageHint" Text="Apri uno strumento dal menu a sinistra." Foreground="#AFC9DF" TextWrapping="Wrap" Margin="0,6,0,8"/>
@@ -918,7 +930,7 @@ public static class BrabusDwm {
 <DataGridTextColumn Header="Elemento" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="Stato / Valore" Binding="{Binding State}" Width="*"/><DataGridTextColumn Header="Informazioni" Binding="{Binding Detail}" Width="3*"/>
 </DataGrid.Columns></DataGrid>
 </DockPanel></TabItem><TabItem Header="NETWORK CENTER"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="9">
-<Border CornerRadius="10" Padding="15" Margin="0,0,0,9"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#173C55" Offset="0"/><GradientStop Color="#102031" Offset="1"/></LinearGradientBrush></Border.Background><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Text="CLOUDFLARE  /  HTTPS + ICMP" FontSize="11" Foreground="#AFC9DF" VerticalAlignment="Center"/><TextBlock Text="NETWORK / SPEED LAB" FontSize="25" FontWeight="Bold" Foreground="#43D7E8"/></DockPanel><TextBlock Name="NetLink" Text="--" Foreground="#73E6AE" Margin="0,5,0,3"/><TextBlock Name="NetAdmin" FontSize="11" Foreground="#AFC9DF"/><TextBlock Text="Test stimato, singola connessione. Circa 30 MB. Nessuna modifica automatica." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,0"/></StackPanel></Border>
+<Border CornerRadius="10" Padding="15" Margin="0,0,0,9"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#173C55" Offset="0"/><GradientStop Color="#102031" Offset="1"/></LinearGradientBrush></Border.Background><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Text="CLOUDFLARE  /  HTTPS + ICMP" FontSize="11" Foreground="#AFC9DF" VerticalAlignment="Center"/><TextBlock Text="NETWORK / SPEED LAB" FontSize="25" FontWeight="Bold" Foreground="#43D7E8"/></DockPanel><TextBlock Name="NetLink" Text="--" Foreground="#73E6AE" Margin="0,5,0,3"/><TextBlock Name="NetAdmin" FontSize="11" Foreground="#AFC9DF"/><TextBlock Text="Test prolungato ~30 s | HTTPS singola connessione | limite 1,3 GB. Nessuna modifica automatica." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,0"/></StackPanel></Border>
 <UniformGrid Columns="2" Margin="0,0,0,6">
 <Border Background="#12263A" CornerRadius="8" Padding="13" Margin="0,0,4,0"><StackPanel><TextBlock Text="DOWNLOAD / Mbps" Foreground="#AFC9DF" FontSize="12"/><TextBlock Name="NetDown" Text="--" FontSize="42" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Text="Velocita ricezione HTTPS" FontSize="11"/></StackPanel></Border>
 <Border Background="#12263A" CornerRadius="8" Padding="13" Margin="4,0,0,0"><StackPanel><TextBlock Text="UPLOAD / Mbps" Foreground="#AFC9DF" FontSize="12"/><TextBlock Name="NetUp" Text="--" FontSize="42" FontWeight="Bold" Foreground="#A9C9FA"/><TextBlock Text="Velocita invio HTTPS" FontSize="11"/></StackPanel></Border>
@@ -930,11 +942,11 @@ public static class BrabusDwm {
 </UniformGrid>
 <Border Background="#101B2A" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><DockPanel><TextBlock DockPanel.Dock="Right" Name="NetStage" Text="PRONTO" Foreground="#43D7E8" TextWrapping="Wrap" MaxWidth="240"/><TextBlock Text="LATENCY TRACE / 10 PING" FontSize="11" Foreground="#AFC9DF"/></DockPanel><Viewbox Stretch="Fill" Height="72"><Canvas Width="300" Height="84"><Path Stroke="#29445F" StrokeThickness="1" Data="M 10,10 L 290,10 M 10,42 L 290,42 M 10,75 L 290,75"/><Polyline Name="NetTrace" Stroke="#43D7E8" StrokeThickness="2" StrokeLineJoin="Round"/></Canvas></Viewbox><ProgressBar Name="NetProgress" Height="7" Maximum="100" Value="0" Foreground="#43D7E8" Background="#22384D"/><WrapPanel HorizontalAlignment="Center" Margin="0,5,0,0"><Button Name="NetStart" Content="AVVIA SPEED TEST" Background="#0C7189"/><Button Name="NetCancel" Content="ANNULLA" IsEnabled="False"/><Button Name="NetRefresh" Content="AGGIORNA RETE"/><Button Name="NetFlushDNS" Content="SVUOTA CACHE DNS"/></WrapPanel></StackPanel></Border>
 <Border Background="#14283B" CornerRadius="8" Padding="10" Margin="0,0,0,8"><StackPanel><TextBlock Text="DNS ATTUALI / INTERFACCE" FontWeight="Bold" Foreground="#43D7E8"/><TextBlock Name="NetInfo" Text="--" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel></Border>
-<TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Seleziona una voce. Driver: solo modifiche compatibili, con backup separato e riavvio manuale. Le voci browser sono collegate al catalogo originale." TextWrapping="Wrap" Foreground="#AFC9DF"/>
-<DataGrid Name="NetGrid" IsReadOnly="True" SelectionMode="Single" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" Width="*"/></DataGrid.Columns></DataGrid>
-<TextBlock Name="NetDetail" Text="Seleziona una voce per dettagli." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,5"/><WrapPanel><Button Name="NetApply" Content="APPLICA TWEAK" Background="#0C7189"/><Button Name="NetRestore" Content="RIPRISTINA DRIVER" IsEnabled="False"/><TextBlock Name="NetBackupCount" Text="Backup rete: --" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
+<TextBlock Text="NETWORK TWEAKS / DRIVER + BROWSER" FontSize="17" FontWeight="Bold" Foreground="#43D7E8" Margin="0,5,0,4"/><TextBlock Text="Spunta le voci o usa Seleziona tutto. Driver: admin e riavvio manuale; browser: backup originale. Voci gia configurate o con backup attivo escluse." TextWrapping="Wrap" Foreground="#AFC9DF"/>
+<DataGrid Name="NetGrid" IsReadOnly="False" SelectionMode="Extended" AutoGenerateColumns="False" CanUserAddRows="False" Height="260" Margin="0,8,0,4"><DataGrid.Columns><DataGridTemplateColumn Header="ON" Width="42"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsEnabled="{Binding CanSelect}" IsChecked="{Binding Selected,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding SelectionHint}" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Tweak" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/><DataGridTextColumn Header="PWU" Binding="{Binding PWU}" IsReadOnly="True" Width="65"/><DataGridTextColumn Header="Prima" Binding="{Binding Before}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Dopo" Binding="{Binding After}" IsReadOnly="True" Width="80"/><DataGridTextColumn Header="Stato" Binding="{Binding Status}" IsReadOnly="True" Width="*"/></DataGrid.Columns></DataGrid>
+<TextBlock Name="NetDetail" Text="Seleziona una voce per dettagli." TextWrapping="Wrap" Foreground="#AFC9DF" Margin="0,3,0,5"/><WrapPanel><Button Name="NetSelectAll" Content="SELEZIONA TUTTO"/><Button Name="NetClear" Content="DESELEZIONA TUTTO"/><Button Name="NetApply" Content="APPLICA SELEZIONATI" Background="#0C7189"/><TextBlock Name="NetSelectedCount" Text="0 selezionati" VerticalAlignment="Center" Margin="6,0"/><Button Name="NetRestore" Content="RIPRISTINA DRIVER" IsEnabled="False"/><TextBlock Name="NetBackupCount" Text="Backup rete: --" VerticalAlignment="Center" Margin="8,0"/></WrapPanel>
 </StackPanel></ScrollViewer></TabItem></TabControl></Grid>
-<Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="10" Margin="0,10,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
+<Border Grid.Row="3" Background="#111F32" CornerRadius="8" Padding="6" Margin="0,6,0,0"><DockPanel><Button DockPanel.Dock="Right" Name="Apply" Background="#0C7189" Content="APPLICA MODIFICHE SELEZIONATE" FontWeight="Bold" Padding="20,12"/><TextBlock Name="Status" Text="Scansione iniziale..." TextWrapping="Wrap" VerticalAlignment="Center" Margin="6"/></DockPanel></Border>
 </Grid></Window>
 '@
 $w=[Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
@@ -1254,24 +1266,47 @@ function RefreshNetwork {
  $tcp=Get-NetTCPSetting -SettingName Internet -ErrorAction SilentlyContinue
  if($tcp){$extra+="TCP autotuning: $($tcp.AutoTuningLevelLocal) | Congestione: $($tcp.CongestionProvider)"}
  if($extra.Count){$w.FindName('NetInfo').Text+=[Environment]::NewLine+($extra -join [Environment]::NewLine)}
- $w.FindName('NetGrid').ItemsSource=@(NetworkCatalog)+@(GetNetworkRelated)
+ $netPending=@();$userPending=@();$netValid=$true;$userValid=$true
+ try{$netPending=@(GetNetworkBackup)}catch{$netValid=$false}
+ try{$userPending=@(ReadJournal)}catch{$userValid=$false}
+ $script:netRows=@(foreach($item in (@(NetworkCatalog)+@(GetNetworkRelated))){
+  $r=$item.PSObject.Copy();$driver=$r.Path.StartsWith('NET|')
+  $pending=if($driver){$netPending}else{$userPending};$valid=if($driver){$netValid}else{$userValid}
+  $already=@($pending|Where-Object {$_.Path -eq $r.Path -and $_.Key -eq $r.Key}).Count -gt 0
+  $can=$valid -and !$already -and $r.Status -eq 'DISPONIBILE'
+  $hint=if(!$valid){'Backup non valido'}elseif($already){'Backup attivo: ripristina prima'}elseif(!$can){'Gia configurato'}elseif($driver){'Richiede admin per applicare'}else{'Disponibile'}
+  $r|Add-Member NoteProperty Selected $false -Force
+  $r|Add-Member NoteProperty CanSelect $can -Force
+  $r|Add-Member NoteProperty SelectionHint $hint -Force
+  $r
+ })
+ $w.FindName('NetGrid').ItemsSource=$script:netRows
+ UpdateNetworkCount
  try{$n=@(GetNetworkBackup);$w.FindName('NetBackupCount').Text="Backup rete: $($n.Count)";$w.FindName('NetRestore').IsEnabled=($n.Count -gt 0)}catch{$w.FindName('NetBackupCount').Text='BACKUP RETE: ERRORE';$w.FindName('NetRestore').IsEnabled=$false}
  $w.FindName('NetAdmin').Text=if(IsElevated){'ADMIN | modifiche driver consentite'}else{'UTENTE | test e tweak browser; driver richiede admin'}
 }
+function UpdateNetworkCount{
+ $n=@($script:netRows|Where-Object {$_.Selected -and $_.CanSelect}).Count
+ $w.FindName('NetSelectedCount').Text="$n selezionati"
+}
+function SelectNetworkAll([bool]$value){
+ foreach($r in @($script:netRows)){$r.Selected=($value -and $r.CanSelect)}
+ $w.FindName('NetGrid').Items.Refresh();UpdateNetworkCount
+}
 function ApplyNetworkSelected{
- $r=$w.FindName('NetGrid').SelectedItem;if(!$r){return}
- if($r.Status -ne 'DISPONIBILE'){return}
- if($r.Path.StartsWith('NET|')){
-  if(!(IsElevated)){throw 'Per questo tweak riapri BRABUS UTIL da PowerShell avviato come amministratore.'}
-  if(!(ConfirmDark 'Modifica scheda di rete' ("$($r.Name): $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note+[Environment]::NewLine+'Backup prima della scrittura. Nessun riavvio automatico; riavvia il PC quando ti conviene. Non garantisce ping/FPS migliori.'))){return}
-  WithNetworkJournal {ApplyValue $r}
- }else{
-  if(!(ConfirmDark 'Modifica browser' ("$($r.Name): $($r.Before) -> $($r.After)"+[Environment]::NewLine+$r.Note))){return}
-  ApplyValue $r
-  RefreshRows
- }
- RefreshNetwork
- $status.Text='Valore scritto e verificato. Riavvio manuale del browser o PC se necessario.'
+ $g=$w.FindName('NetGrid')
+ $null=$g.CommitEdit([Windows.Controls.DataGridEditingUnit]::Cell,$true)
+ $null=$g.CommitEdit([Windows.Controls.DataGridEditingUnit]::Row,$true)
+ $selected=@($script:netRows|Where-Object {$_.Selected -and $_.CanSelect -and $_.Status -eq 'DISPONIBILE'})
+ if(!$selected.Count){$status.Text='Nessun tweak rete disponibile selezionato';return}
+ $drivers=@($selected|Where-Object {$_.Path.StartsWith('NET|')})
+ if($drivers.Count -and !(IsElevated)){throw 'Selezione contiene tweak driver: riapri PowerShell come amministratore, oppure deseleziona i driver. Nessuna modifica applicata.'}
+ $preview="Modifiche selezionate: $($selected.Count)"+[Environment]::NewLine+'Backup prima della scrittura. Nessun riavvio automatico. Possibili variazioni di latenza, throughput e consumi; benefici non garantiti.'+[Environment]::NewLine+[Environment]::NewLine+(($selected|ForEach-Object {"$($_.Name): $($_.Before) -> $($_.After) | $($_.Note)"})-join [Environment]::NewLine)
+ if(!(ConfirmDark 'Conferma tweak Internet' $preview)){return}
+ $ok=0;$fail=0
+ foreach($r in $selected){try{if($r.Path.StartsWith('NET|')){WithNetworkJournal {ApplyValue $r}}else{ApplyValue $r};$ok++}catch{$fail++;Event $r.Name '-' '-' ('ERRORE RETE: '+$_.Exception.Message)}}
+ RefreshRows;RefreshNetwork;$w.FindName('Tabs').SelectedIndex=4
+ $status.Text="Tweak rete verificati: $ok | errori: $fail. Riavvio manuale se necessario."
 }
 function RestoreNetwork{
  if(!(IsElevated)){throw 'Ripristino driver: avvia PowerShell come amministratore'}
@@ -1281,36 +1316,58 @@ function RestoreNetwork{
  RefreshNetwork
  $status.Text='Ripristino rete verificato; riavvio manuale necessario.'
 }
-function MeasureConnection([hashtable]$state,[int]$downBytes=25000000,[int]$upBytes=5000000){
- # Only random synthetic bytes and public test requests; no files or personal reports uploaded.
+function MeasureConnection([hashtable]$state,[int]$phaseSeconds=12){
  $ErrorActionPreference='Stop'
- $state.Stage='LATENZA';$state.Progress=5;$cancel=$state.CancelSource;if(!$cancel){$cancel=New-Object Threading.CancellationTokenSource};$token=$cancel.Token
+ $totalWatch=[Diagnostics.Stopwatch]::StartNew()
+ $cancel=$state.CancelSource;if(!$cancel){$cancel=New-Object Threading.CancellationTokenSource};$token=$cancel.Token
+ $state.Stage='LATENZA';$state.Progress=0
  $samples=@();$lost=0;$ping=New-Object Net.NetworkInformation.Ping
- try{for($i=0;$i -lt 10;$i++){$token.ThrowIfCancellationRequested();try{$r=$ping.Send('1.1.1.1',1000);if($r.Status -eq 'Success'){$samples+= [double]$r.RoundtripTime}else{$lost++}}catch{$lost++};$state.Samples=@($samples);$state.Progress=5+($i+1)*3;Start-Sleep -Milliseconds 100}}finally{$ping.Dispose()}
+ try{for($i=0;$i -lt 10;$i++){$token.ThrowIfCancellationRequested();try{$r=$ping.Send('1.1.1.1',700);if($r.Status -eq 'Success'){$samples+=[double]$r.RoundtripTime}else{$lost++}}catch{$lost++};$state.Samples=@($samples);$state.Progress=($i+1)*1.5;Start-Sleep -Milliseconds 200}}finally{$ping.Dispose()}
  $state.Loss=$lost*10
  if($samples.Count){$state.Ping=[math]::Round(($samples|Measure-Object -Average).Average,1)}
  if($samples.Count -ge 2){$delta=@(for($i=1;$i -lt $samples.Count;$i++){[math]::Abs($samples[$i]-$samples[$i-1])});$state.Jitter=[math]::Round(($delta|Measure-Object -Average).Average,1)}
  Add-Type -AssemblyName System.Net.Http
- $client=New-Object Net.Http.HttpClient
- $client.Timeout=[TimeSpan]::FromSeconds(35)
+ $client=New-Object Net.Http.HttpClient;$client.Timeout=[TimeSpan]::FromSeconds(25)
+ $rng=[Security.Cryptography.RandomNumberGenerator]::Create()
  try{
-  $state.Stage='DOWNLOAD';$state.Progress=38;$cancel.CancelAfter(35000)
-  $url="https://speed.cloudflare.com/__down?bytes=$downBytes&nonce=$([guid]::NewGuid().ToString('N'))"
-  $sw=[Diagnostics.Stopwatch]::StartNew()
-  $resp=$client.GetAsync($url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$token).GetAwaiter().GetResult()
-  try{
-   $null=$resp.EnsureSuccessStatusCode();$stream=$resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-   try{$buf=New-Object byte[] 65536;$n=0L;while(($read=$stream.ReadAsync($buf,0,$buf.Length,$token).GetAwaiter().GetResult()) -gt 0){$n+=$read;if($n -gt $downBytes){throw 'Risposta download oltre limite'};$state.Progress=[math]::Min(70,38+32*$n/$downBytes);if($sw.Elapsed.TotalSeconds -gt 35){throw 'Timeout download'}}}finally{$stream.Dispose()}
-   $sw.Stop();if($n -ne $downBytes){throw "Download incompleto: $n byte"}
-   $state.Down=[math]::Round($n*8/1e6/[math]::Max(.001,$sw.Elapsed.TotalSeconds),2)
-  }finally{$resp.Dispose()}
-  $state.Stage='UPLOAD';$state.Progress=75;$cancel.CancelAfter(35000)
-  $bytes=New-Object byte[] $upBytes
-  $rng=[Security.Cryptography.RandomNumberGenerator]::Create();try{$rng.GetBytes($bytes)}finally{$rng.Dispose()}
-  $content=New-Object Net.Http.ByteArrayContent -ArgumentList (,$bytes)
-  try{$sw.Restart();$resp=$client.PostAsync('https://speed.cloudflare.com/__up',$content,$token).GetAwaiter().GetResult();try{$null=$resp.EnsureSuccessStatusCode();$sw.Stop();$state.Up=[math]::Round($upBytes*8/1e6/[math]::Max(.001,$sw.Elapsed.TotalSeconds),2)}finally{$resp.Dispose()}}finally{$content.Dispose()}
-  $state.Stage='COMPLETATO';$state.Progress=100
- }finally{$client.Dispose()}
+  foreach($mode in @('Down','Up')){
+   $token.ThrowIfCancellationRequested()
+   $isDown=$mode -eq 'Down';$label=if($isDown){'DOWNLOAD'}else{'UPLOAD'}
+   $limit=if($isDown){1000000000L}else{300000000L};$maxChunk=if($isDown){25000000}else{10000000}
+   $chunk=1000000;$base=if($isDown){15}else{57.5}
+   $phase=[Diagnostics.Stopwatch]::StartNew();$sum=0L;$measured=0.0;$requests=0
+   $ct=[Threading.CancellationTokenSource]::CreateLinkedTokenSource($token);$ct.CancelAfter($phaseSeconds*1000)
+   try{
+    while($phase.Elapsed.TotalSeconds -lt $phaseSeconds -and $sum -lt $limit){
+     $remaining=$limit-$sum;if($remaining -lt $chunk){$state.Limited=$true;break};$sw=[Diagnostics.Stopwatch]::StartNew()
+     $state.Stage="$label | $([math]::Round($phase.Elapsed.TotalSeconds,1)) / $phaseSeconds s"
+     try{
+      if($isDown){
+       $url="https://speed.cloudflare.com/__down?bytes=$chunk"
+       $resp=$client.GetAsync($url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$ct.Token).GetAwaiter().GetResult()
+       try{$null=$resp.EnsureSuccessStatusCode();$stream=$resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        try{$buf=New-Object byte[] 65536;$n=0L;while(($read=$stream.ReadAsync($buf,0,$buf.Length,$ct.Token).GetAwaiter().GetResult()) -gt 0){$n+=$read;if($n -gt $chunk){throw 'Risposta oltre limite'};$state.Progress=[math]::Min($base+42.5,$base+42.5*$phase.Elapsed.TotalSeconds/$phaseSeconds);$state.Stage="$label | $([math]::Round($phase.Elapsed.TotalSeconds,1)) / $phaseSeconds s"} }finally{$stream.Dispose()}
+        if($n -ne $chunk){throw 'Download incompleto'}
+       }finally{$resp.Dispose()}
+      }else{
+       $bytes=New-Object byte[] $chunk;$rng.GetBytes($bytes);$content=New-Object Net.Http.ByteArrayContent -ArgumentList (,$bytes)
+       try{$resp=$client.PostAsync('https://speed.cloudflare.com/__up',$content,$ct.Token).GetAwaiter().GetResult();try{$null=$resp.EnsureSuccessStatusCode()}finally{$resp.Dispose()}}finally{$content.Dispose()}
+      }
+     }catch{if($ct.IsCancellationRequested -and !$token.IsCancellationRequested){break};$token.ThrowIfCancellationRequested();$state.Error=$_.Exception.Message;break}
+     $sw.Stop();$sum+=$chunk;$measured=$phase.Elapsed.TotalSeconds;$requests++
+     $state[$mode]=[math]::Round($sum*8/1e6/[math]::Max(.001,$measured),2)
+     $state.Progress=[math]::Min($base+42.5,$base+42.5*$measured/$phaseSeconds)
+     $desired=$chunk/[math]::Max(.05,$sw.Elapsed.TotalSeconds);$chunk=if($desired -ge 15000000 -and $isDown){25000000}elseif($desired -ge 4000000){10000000}elseif($desired -ge 400000){1000000}else{100000}
+    }
+   }finally{$ct.Dispose()}
+   $token.ThrowIfCancellationRequested()
+   $state[$mode+'Bytes']=$sum;$state[$mode+'Seconds']=[math]::Round($measured,2);$state[$mode+'Requests']=$requests
+   if($sum -ge $limit){$state.Limited=$true};if($state.Error){break}
+  }
+  $state.Elapsed=[math]::Round($totalWatch.Elapsed.TotalSeconds,1)
+  $state.Stage=if($state.Error){"PARZIALE | server non disponibile: $($state.Error)"}elseif($state.Limited){"COMPLETATO | $($state.Elapsed) s | limite dati"}elseif(!$state.Down -or !$state.Up){"PARZIALE | $($state.Elapsed) s"}else{"COMPLETATO | $($state.Elapsed) s"}
+  $state.Progress=100
+ }finally{$rng.Dispose();$client.Dispose()}
 }
 $script:netJob=$null;$script:netState=$null
 function RenderNetworkTest($s){
@@ -1333,7 +1390,7 @@ function StopNetworkTest {
 }
 function StartNetworkTest {
  if($script:netJob){return}
- if(!(ConfirmDark 'Speed test Internet' 'Test verso Cloudflare (circa 30 MB di traffico + overhead); misura una singola connessione HTTPS, non un test multi-stream. Ping ICMP separato a 1.1.1.1. Nessun dato personale inviato esplicitamente; il servizio vede IP e traffico. Avviare?')){return}
+ if(!(ConfirmDark 'Speed test Internet' 'Test verso Cloudflare: circa 26-35 secondi; fino a 1 GB download + 300 MB upload e overhead. Il limite dati puo abbreviare la misurazione. Singola connessione HTTPS, ping ICMP a 1.1.1.1. Il servizio vede IP e richieste. Evita su connessioni a consumo. Avviare?')){return}
  $script:netState=[hashtable]::Synchronized(@{CancelSource=(New-Object Threading.CancellationTokenSource);Stage='AVVIO';Progress=0;Samples=@();Down=$null;Up=$null;Ping=$null;Jitter=$null;Loss=$null})
  RenderNetworkTest $script:netState
  $ps=[powershell]::Create()
@@ -1356,6 +1413,12 @@ $w.FindName('NetStart').Add_Click({Guard {StartNetworkTest}})
 $w.FindName('NetCancel').Add_Click({Guard {if($script:netJob){$script:netState.Stage='ANNULLAMENTO';$script:netState.CancelSource.Cancel();$w.FindName('NetCancel').IsEnabled=$false}}})
 $w.FindName('NetRefresh').Add_Click({Guard {RefreshNetwork}})
 $w.FindName('NetFlushDNS').Add_Click({Guard {if(ConfirmDark 'Cache DNS' 'Svuotare la cache DNS locale? Non cambia i server DNS e non promette ping inferiore. La cache verra ricostruita automaticamente.'){Clear-DnsClientCache -ErrorAction Stop;$status.Text='Cache DNS svuotata'}}})
+$w.FindName('NetSelectAll').Add_Click({Guard {SelectNetworkAll $true}})
+$w.FindName('NetClear').Add_Click({Guard {SelectNetworkAll $false}})
+$w.FindName('NetGrid').AddHandler([Windows.Controls.Primitives.ButtonBase]::ClickEvent,[Windows.RoutedEventHandler]{
+ param($sender,$args)
+ if($args.OriginalSource -is [Windows.Controls.CheckBox]){$null=$w.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background,[Action]{UpdateNetworkCount})}
+})
 $w.FindName('NetApply').Add_Click({Guard {ApplyNetworkSelected}})
 $w.FindName('NetRestore').Add_Click({Guard {RestoreNetwork}})
 $w.FindName('NetGrid').Add_SelectionChanged({$r=$w.FindName('NetGrid').SelectedItem;if($r){$w.FindName('NetDetail').Text="$($r.Name) | $($r.Before) -> $($r.After) | PWU $($r.PWU)"+[Environment]::NewLine+$r.Note}})
@@ -1399,18 +1462,22 @@ if($UiTest){
  $cl=$w.FindName('CategoryList')
  $cl.ItemsSource=@('Tutte','App Notifications','App Privacy','Audio','Browser','Debloat','Explorer','Gaming','Input','Notifications','Power / CPU','Privacy','Startup','Taskbar','Visual')
  $cl.SelectedItem='Tutte'
+ $w.FindName('Hardware').Text='Hardware rilevato: AMD Ryzen 7 5800X 8-Core Processor / AMD Radeon RX 7800 XT'
  $w.Opacity=0;$w.ShowActivated=$false;$w.ShowInTaskbar=$false;$w.Show();$w.UpdateLayout()
- foreach($sz in @(@(1280,820),@(970,650))){
-  $w.Width=$sz[0];$w.Height=$sz[1]
-  $w.Measure([Windows.Size]::new($sz[0],$sz[1]));$w.Arrange([Windows.Rect]::new(0,0,$sz[0],$sz[1]));$w.UpdateLayout()
-  if($cl.ActualHeight -lt 1){throw 'Category layout not measured'}
-  for($i=0;$i -lt $cl.Items.Count;$i++){
-   $container=$cl.ItemContainerGenerator.ContainerFromIndex($i)
-   if(!$container -or $container.ActualHeight -lt 1){throw "Category not laid out: $i"}
-   $bounds=$container.TransformToAncestor($w).TransformBounds([Windows.Rect]::new(0,0,$container.ActualWidth,$container.ActualHeight))
-   if($bounds.Bottom -gt $sz[1]){throw "Category clipped at $($sz[0])x$($sz[1]): $i"}
-  }
-  Write-Output ("CATEGORY LAYOUT OK: "+$sz[0]+"x"+$sz[1]+" | "+$cl.Items.Count+" visible")
+ $sv=$w.FindName('NavScroll');$nav=$w.FindName('NavStack')
+ foreach($sz in @(@(1440,900),@(1280,820),@(970,650))){
+  $w.Width=$sz[0];$w.Height=$sz[1];$w.UpdateLayout();$sv.ScrollToTop();$w.UpdateLayout()
+  $names=@('Scan','Safe','Gaming','Ultimate','SelectAll','Clear','Export','Import','Debloat','Apps','Startup','Power','Storage','Graphics','GpuApp','Software','Features','Services','Diag','Updates','Audio','Network','Backup','Undo','Files')
+  $all=@($names|ForEach-Object {$w.FindName($_)})
+  for($i=0;$i -lt $cl.Items.Count;$i++){$c=$cl.ItemContainerGenerator.ContainerFromIndex($i);if(!$c -or $c.ActualHeight -lt 1){throw "Category not laid out: $i"};$all+=$c}
+  $initial=0
+  foreach($c in $all){$r=$c.TransformToAncestor($nav).TransformBounds([Windows.Rect]::new(0,0,$c.ActualWidth,$c.ActualHeight));if($r.Top -ge 0 -and $r.Bottom -le $sv.ViewportHeight+1){$initial++};if($r.Bottom -gt $sv.ExtentHeight+1){throw 'Navigation item outside scroll extent'}}
+  Write-Output ("MEASURE: "+$sz[0]+"x"+$sz[1]+" | visible="+$initial+" of "+$all.Count+" viewport="+$sv.ViewportHeight+" extent="+$sv.ExtentHeight+" window="+$w.ActualHeight); if($initial -lt 23){throw "Too few items visible: $initial"}
+  if($sz[0] -eq 1440 -and $initial -ne $all.Count){throw 'Default layout should fit all navigation items'}
+  $sv.ScrollToEnd();$w.UpdateLayout();$end=$w.FindName('Files').TransformToAncestor($nav).TransformBounds([Windows.Rect]::new(0,0,$w.FindName('Files').ActualWidth,$w.FindName('Files').ActualHeight))
+  if($end.Bottom -gt ($sv.VerticalOffset+$sv.ViewportHeight+1)){throw 'Last item unreachable'}
+  Write-Output ("NAV LAYOUT OK: "+$sz[0]+"x"+$sz[1]+" | "+$initial+"/"+$all.Count+" initially visible | overflow "+[math]::Round($sv.ScrollableHeight,1))
+  $sv.ScrollToTop()
  }
  # Synthetic catalog and journal in this test process only, no production settings changed.
  $script:rows=@(
@@ -1456,6 +1523,20 @@ if($UiTest){
  $mock=@{Stage='TEST';Progress=100;Samples=@(10,13,12,15);Down=100.5;Up=20;Ping=12.5;Jitter=2;Loss=0}
  RenderNetworkTest $mock
  if($w.FindName('NetDown').Text -ne '100.5' -or $w.FindName('NetTrace').Points.Count -ne 4){throw 'Network HUD render failed'}
+ $realNetRows=$script:netRows
+ $script:netRows=@(
+  [pscustomobject]@{Name='Available1';Selected=$false;CanSelect=$true;Status='DISPONIBILE'},
+  [pscustomobject]@{Name='Available2';Selected=$false;CanSelect=$true;Status='DISPONIBILE'},
+  [pscustomobject]@{Name='Configured';Selected=$false;CanSelect=$false;Status='GIA CONFIGURATO'},
+  [pscustomobject]@{Name='Backup';Selected=$false;CanSelect=$false;Status='DISPONIBILE'}
+ )
+ $w.FindName('NetGrid').ItemsSource=$script:netRows
+ $w.FindName('NetSelectAll').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if(@($script:netRows|Where-Object Selected).Count -ne 2 -or $script:netRows[2].Selected -or $script:netRows[3].Selected -or $w.FindName('NetSelectedCount').Text -ne '2 selezionati'){throw 'Network select all failed'}
+ $w.FindName('NetClear').RaiseEvent((New-Object Windows.RoutedEventArgs ([Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+ if(@($script:netRows|Where-Object Selected).Count -or $w.FindName('NetSelectedCount').Text -ne '0 selezionati'){throw 'Network clear failed'}
+ $script:netRows=$realNetRows;$w.FindName('NetGrid').ItemsSource=$realNetRows
+ Write-Output 'NETWORK MULTISELECT OK'
  Write-Output ("NETWORK UI OK: "+@($w.FindName('NetGrid').ItemsSource).Count+" compatible rows")
  $w.Close();Write-Output 'UI TEST OK - PWU, combined filters, token search, separate counters, category filters, select visible, all integrated pages';exit 0
 }
